@@ -1,6 +1,6 @@
 {
   "name": "whasend",
-  "version": "1.6.5",
+  "version": "1.6.4",
   "releaseDate": "2025-11-11",
   "description": "whasend device desktop app with updated features like export patient, better message send today",
   "main": "main.js",
@@ -22,7 +22,7 @@
     "systeminformation": "^5.27.10",
     "whatsapp-web.js": "^1.34.1",
     "xlsx": "^0.18.5",
-  "electron-updater": "^4.6.5",
+    "electron-updater": "^4.6.5",
     "electron-log": "^4.4.7"
   },
   "devDependencies": {
@@ -31,8 +31,7 @@
     "electron-packager": "^17.1.2",
     "electron-rebuild": "^3.2.9",
     "rimraf": "^5.0.5"
-  }
-  ,
+  },
   "build": {
     "appId": "com.example.whasend",
     "productName": "whasend",
@@ -57,7 +56,9 @@
     "icon": "assets/icon.ico",
     "compression": "maximum",
     "win": {
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "icon": "assets/icon.ico",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
@@ -70,8 +71,7 @@
     ],
     "nsis": {
       "oneClick": false,
-      "perMachine": false
-      ,
+      "perMachine": false,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     }
