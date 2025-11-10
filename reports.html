@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Reports — Whasend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root{--bg:#f6f8fa;--card:#ffffff;--muted:#6b7280;--accent:#0b74de}
+      body{font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);margin:0;padding:18px;color:#111}
+      .container{display:flex;gap:16px}
+      .left{flex:1}
+      .right{width:360px}
+      .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+      input.search{flex:1;padding:8px;border-radius:8px;border:1px solid #ddd}
+      button.action{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+      .card{background:var(--card);padding:12px;border-radius:10px;border:1px solid #e6edf3;box-shadow:0 1px 2px rgba(16,24,40,0.03);margin-bottom:12px}
+      .report-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+      .meta{font-size:13px;color:var(--muted)}
+      .title{font-weight:600}
+      .progress{height:10px;background:#eef2f7;border-radius:8px;overflow:hidden}
+      .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#4aa0f3);}
+      .small{font-size:12px;color:var(--muted)}
+      .controls{display:flex;gap:6px}
+      .controls button{padding:6px 8px;border-radius:6px;border:1px solid #e0e7ef;background:#fff;cursor:pointer}
+      .pagination{display:flex;align-items:center;justify-content:space-between;margin:16px 0;padding:12px;background:var(--card);border-radius:8px;border:1px solid #e6edf3}
+      .pagination-info{font-size:14px;color:var(--muted)}
+      .pagination-controls{display:flex;gap:8px;align-items:center}
+      .pagination button{padding:6px 12px;border-radius:6px;border:1px solid #e0e7ef;background:#fff;cursor:pointer;font-size:13px}
+      .pagination button:disabled{opacity:0.5;cursor:not-allowed}
+      .pagination button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+      .pagination select{padding:4px 8px;border-radius:4px;border:1px solid #ddd;font-size:13px}
+      .right h3{margin-top:0}
+      .alerts{max-height:260px;overflow:auto}
+      .alert-item{padding:8px;border-radius:6px;border:1px solid #fdecea;background:#fff6f6;margin-bottom:8px}
+      label{display:block;font-size:13px;margin-top:8px}
+      .settings input{width:95%;padding:8px;border-radius:6px;border:1px solid #ddd}
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <input class="search" id="search" placeholder="Search reports..." />
+      <button class="action" id="refreshBtn">🔄 Refresh</button>
+      <button class="action" id="clearAllLogsBtn" style="background: #dc3545;">🗑️ Clear All Logs</button>
+      <div id="autoRefreshIndicator" style="display: none; color: #4CAF50; font-size: 12px; margin-left: 10px;">
+        🔄 Auto-refreshing every 5s
+      </div>
+      <!-- Safe Mode button hidden - always enabled in background -->
+      <button class="action" id="safeModeBtn" style="display: none;">🛡️ Safe Mode</button>
+    </div>
+
+    <div class="container">
+      <div class="left">
+        <div class="card" id="statsCard">
+          <h3>Daily Summary (last 7 days)</h3>
+          <div id="dailyStats">Loading...</div>
+        </div>
+        
+        <!-- Pagination Controls -->
+        <div class="pagination" id="paginationTop">
+          <div class="pagination-info" id="paginationInfo">Loading...</div>
+          <div class="pagination-controls">
+            <select id="itemsPerPage">
+              <option value="10">10 per page</option>
+              <option value="25" selected>25 per page</option>
+              <option value="50">50 per page</option>
+              <option value="100">100 per page</option>
+            </select>
+            <button id="prevBtn">← Previous</button>
+            <span id="pageNumbers"></span>
+            <button id="nextBtn">Next →</button>
+          </div>
+        </div>
+        
+        <div id="reportsContainer"></div>
+        
+        <!-- Bottom Pagination -->
+        <div class="pagination" id="paginationBottom" style="margin-top:16px">
+          <div class="pagination-info" id="paginationInfoBottom">Loading...</div>
+          <div class="pagination-controls">
+            <button id="prevBtnBottom">← Previous</button>
+            <span id="pageNumbersBottom"></span>
+            <button id="nextBtnBottom">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="card">
+          <h3>Alerts</h3>
+          <div class="alerts" id="alertsList">Loading...</div>
+          <div style="text-align:right;margin-top:8px"><button id="clearAlerts">Clear Alerts</button></div>
+        </div>
+
+        <div class="card" id="settingsCard" style="display:none">
+          <h3>Settings</h3>
+          <div class="settings">
+            <label>Global rate (messages / minute)</label>
+            <input id="rateLimitPerMinute" type="number" />
+            <label>Per-profile rate (messages / minute)</label>
+            <input id="perProfileLimitPerMinute" type="number" />
+            <label>Max consecutive failures before pause</label>
+            <input id="maxConsecutiveFailuresBeforePause" type="number" />
+            <label>Min wait period between messages (days)</label>
+            <input id="minWaitPeriodDays" type="number" min="1" placeholder="e.g., 7" />
+            <label>Max messages per profile per day</label>
+            <input id="maxPerProfilePerDay" type="number" min="1" placeholder="e.g., 50" />
+            <!-- Dry run checkbox hidden - always disabled in background -->
+            <label style="display: none;">Dry run (no sends)</label>
+            <input id="dryRun" type="checkbox" style="display: none;" />
+            <div style="margin-top:8px;text-align:right"><button id="saveSettings">Save</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer, shell } = require('electron');
+      const reportsContainer = document.getElementById('reportsContainer');
+      const alertsList = document.getElementById('alertsList');
+      const refreshBtn = document.getElementById('refreshBtn');
+      const searchInput = document.getElementById('search');
+      const safeModeBtn = document.getElementById('safeModeBtn');
+      const clearAllLogsBtn = document.getElementById('clearAllLogsBtn');
+
+      // Pagination variables
+      let currentPage = 1;
+      let itemsPerPage = 25;
+      let allReports = [];
+      let filteredReports = [];
+
+      // Pagination elements
+      const itemsPerPageSelect = document.getElementById('itemsPerPage');
+      const prevBtn = document.getElementById('prevBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const prevBtnBottom = document.getElementById('prevBtnBottom');
+      const nextBtnBottom = document.getElementById('nextBtnBottom');
+      const pageNumbers = document.getElementById('pageNumbers');
+      const pageNumbersBottom = document.getElementById('pageNumbersBottom');
+      const paginationInfo = document.getElementById('paginationInfo');
+      const paginationInfoBottom = document.getElementById('paginationInfoBottom');
+
+      async function loadSettingsToUI() {
+        const s = await ipcRenderer.invoke('get-settings');
+        document.getElementById('rateLimitPerMinute').value = s.rateLimitPerMinute || 10;
+        document.getElementById('perProfileLimitPerMinute').value = s.perProfileLimitPerMinute || 5;
+        document.getElementById('maxConsecutiveFailuresBeforePause').value = s.maxConsecutiveFailuresBeforePause || 3;
+        document.getElementById('minWaitPeriodDays').value = s.minWaitPeriodDays || 7;
+        document.getElementById('maxPerProfilePerDay').value = s.defaultMessageLimitPerProfile || s.maxPerProfilePerDay || 50;
+        // Force dry run to always be false (hidden from UI)
+        document.getElementById('dryRun').checked = false;
+        // Force safe mode to always be ON (hidden from UI)
+        safeModeBtn.textContent = '🛡️ Safe Mode: ON';
+      }
+
+      document.getElementById('saveSettings').addEventListener('click', async () => {
+        const maxPerProfileValue = Number(document.getElementById('maxPerProfilePerDay').value) || 50;
+        const settings = {
+          rateLimitPerMinute: Number(document.getElementById('rateLimitPerMinute').value) || 10,
+          perProfileLimitPerMinute: Number(document.getElementById('perProfileLimitPerMinute').value) || 5,
+          maxConsecutiveFailuresBeforePause: Number(document.getElementById('maxConsecutiveFailuresBeforePause').value) || 3,
+          minWaitPeriodDays: Number(document.getElementById('minWaitPeriodDays').value) || 7,
+          maxPerProfilePerDay: maxPerProfileValue,
+          defaultMessageLimitPerProfile: maxPerProfileValue, // Save to defaultMessageLimitPerProfile key
+          // Force dry run to always be false (hidden from UI)
+          dryRun: false,
+          // Force safe mode to always be true (hidden from UI)
+          safeMode: true
+        };
+        const res = await ipcRenderer.invoke('save-settings', settings);
+        if (res && res.success) alert('Settings saved');
+      });
+
+      // Safe mode toggle disabled - always remains ON
+      safeModeBtn.addEventListener('click', async () => {
+        // Do nothing - safe mode is always enabled
+        console.log('Safe mode is permanently enabled for security');
+      });
+
+      document.getElementById('clearAlerts').addEventListener('click', async () => {
+        if (confirm('Clear all alerts? This will permanently remove all stored alerts from the database.')) {
+          try {
+            const result = await ipcRenderer.invoke('clear-alerts');
+            if (result && result.success) {
+              alertsList.innerHTML = '<div class="small">No alerts</div>';
+              alert(`✅ Successfully cleared ${result.cleared || 0} alerts from database.`);
+            } else {
+              alert(`❌ Failed to clear alerts: ${result.error || 'Unknown error'}`);
+            }
+          } catch (e) {
+            console.error('Error clearing alerts:', e);
+            alert(`❌ Error clearing alerts: ${e.message}`);
+          }
+        }
+      });
+
+      refreshBtn.addEventListener('click', () => loadAll());
+      searchInput.addEventListener('input', debounce(() => {
+        currentPage = 1; // Reset to first page when searching
+        loadAll();
+      }, 300));
+
+      // Clear All Logs functionality
+      clearAllLogsBtn.addEventListener('click', async () => {
+        const confirmMessage = 'Are you sure you want to clear ALL logs and reports?\n\nThis will permanently delete:\n• All campaign reports\n• All message sending logs\n• All job history\n\nThis action cannot be undone!';
+        
+        if (confirm(confirmMessage)) {
+          try {
+            clearAllLogsBtn.disabled = true;
+            clearAllLogsBtn.textContent = '🔄 Clearing...';
+            
+            const result = await ipcRenderer.invoke('clear-all-logs');
+            
+            if (result && result.success) {
+              alert(`✅ Successfully cleared all logs!\n\nCleared:\n• ${result.reports || 0} reports\n• ${result.logs || 0} message logs\n• ${result.files || 0} report files`);
+              
+              // Refresh the UI to show empty state
+              allReports = [];
+              filteredReports = [];
+              renderReports();
+              await loadDailyStats(); // Refresh stats
+            } else {
+              alert(`❌ Failed to clear logs: ${result?.error || 'Unknown error'}`);
+            }
+          } catch (e) {
+            console.error('Error clearing all logs:', e);
+            alert(`❌ Error clearing logs: ${e.message}`);
+          } finally {
+            clearAllLogsBtn.disabled = false;
+            clearAllLogsBtn.textContent = '🗑️ Clear All Logs';
+          }
+        }
+      });
+
+      // Pagination event listeners
+      itemsPerPageSelect.addEventListener('change', () => {
+        itemsPerPage = parseInt(itemsPerPageSelect.value);
+        currentPage = 1;
+        loadAll();
+      });
+
+      prevBtn.addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          renderReports();
+        }
+      });
+
+      nextBtn.addEventListener('click', () => {
+        const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderReports();
+        }
+      });
+
+      prevBtnBottom.addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          renderReports();
+        }
+      });
+
+      nextBtnBottom.addEventListener('click', () => {
+        const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderReports();
+        }
+      });
+
+      function debounce(fn, wait){let t;return (...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),wait)}}
+
+      function updatePaginationControls() {
+        const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+        const startItem = (currentPage - 1) * itemsPerPage + 1;
+        const endItem = Math.min(currentPage * itemsPerPage, filteredReports.length);
+        
+        // Update info text
+        const infoText = filteredReports.length === 0 ? 
+          'No reports found' : 
+          `Showing ${startItem}-${endItem} of ${filteredReports.length} reports`;
+        paginationInfo.textContent = infoText;
+        paginationInfoBottom.textContent = infoText;
+        
+        // Update button states
+        const canGoPrev = currentPage > 1;
+        const canGoNext = currentPage < totalPages;
+        
+        prevBtn.disabled = !canGoPrev;
+        nextBtn.disabled = !canGoNext;
+        prevBtnBottom.disabled = !canGoPrev;
+        nextBtnBottom.disabled = !canGoNext;
+        
+        // Generate page numbers
+        updatePageNumbers(totalPages);
+      }
+
+      function updatePageNumbers(totalPages) {
+        function generatePageButtons(container) {
+          container.innerHTML = '';
+          
+          if (totalPages <= 1) return;
+          
+          const maxVisiblePages = 5;
+          let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+          let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+          
+          if (endPage - startPage < maxVisiblePages - 1) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+          }
+          
+          // First page
+          if (startPage > 1) {
+            const btn = document.createElement('button');
+            btn.textContent = '1';
+            btn.onclick = () => { currentPage = 1; renderReports(); };
+            container.appendChild(btn);
+            
+            if (startPage > 2) {
+              const ellipsis = document.createElement('span');
+              ellipsis.textContent = '...';
+              ellipsis.style.padding = '6px';
+              container.appendChild(ellipsis);
+            }
+          }
+          
+          // Page range
+          for (let i = startPage; i <= endPage; i++) {
+            const btn = document.createElement('button');
+            btn.textContent = i;
+            btn.className = i === currentPage ? 'active' : '';
+            btn.onclick = () => { currentPage = i; renderReports(); };
+            container.appendChild(btn);
+          }
+          
+          // Last page
+          if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+              const ellipsis = document.createElement('span');
+              ellipsis.textContent = '...';
+              ellipsis.style.padding = '6px';
+              container.appendChild(ellipsis);
+            }
+            
+            const btn = document.createElement('button');
+            btn.textContent = totalPages;
+            btn.onclick = () => { currentPage = totalPages; renderReports(); };
+            container.appendChild(btn);
+          }
+        }
+        
+        generatePageButtons(pageNumbers);
+        generatePageButtons(pageNumbersBottom);
+      }
+
+      async function loadAlerts() {
+        try {
+          const al = await ipcRenderer.invoke('get-alerts');
+          alertsList.innerHTML = '';
+          if (!al || al.length === 0) { alertsList.innerHTML = '<div class="small">No alerts</div>'; return; }
+          al.slice(0,50).forEach(a => {
+            const div = document.createElement('div');
+            div.className = 'alert-item';
+            div.innerHTML = `<div style="font-weight:600">${a.type || 'alert'}</div><div class="small">${a.timestamp}</div><div style="margin-top:6px">${a.message}</div>`;
+            alertsList.appendChild(div);
+          });
+        } catch (e) { alertsList.innerHTML = '<div class="small">Failed to load alerts</div>'; }
+      }
+
+      async function loadReports() {
+        let reports = [];
+        try { reports = await ipcRenderer.invoke('get-reports'); } catch (e) { console.error('get-reports failed', e); }
+        return (reports || []).slice().reverse();
+      }
+      function renderReportItem(r){
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const pct = r.record_total ? Math.round((r.record_sent / r.record_total) * 100) : 0;
+        const statusLabel = r.status || 'unknown';
+
+        card.innerHTML = `
+          <div class="report-row">
+            <div>
+              <div class="title">${r.id}</div>
+              <div class="meta">Template: ${r.template_name || '-'} • Profiles: ${Array.isArray(r.profiles)? r.profiles.join(', '): r.profiles}</div>
+            </div>
+            <div class="small">${statusLabel}</div>
+          </div>
+          <div style="margin-top:10px">
+            <div class="progress"><i style="width:${pct}%"></i></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px"><div class="small">Sent: ${r.record_sent}/${r.record_total} (${pct}%)</div><div class="small">Failed: ${r.record_failed||0}</div></div>
+          </div>
+        `;
+
+        const controls = document.createElement('div');
+        controls.className = 'controls';
+
+        const openBtn = document.createElement('button'); openBtn.textContent='📁 Open';
+        openBtn.onclick = () => {
+          if (r.path) shell.openPath(r.path).catch(e=>alert('Open failed: '+e.message));
+        };
+
+        const downloadBtn = document.createElement('button'); downloadBtn.textContent='📥 Save As';
+        downloadBtn.onclick = () => {
+          if (r.path) ipcRenderer.invoke('save-excel-as', r.path).then(res=>{ if (res && res.success) alert('Saved to '+res.path); else alert('Save failed'); });
+        };
+
+        const pauseBtn = document.createElement('button'); pauseBtn.textContent = r.paused ? '▶ Resume' : '⏸ Pause';
+        pauseBtn.onclick = () => {
+          if (r.paused) { 
+            ipcRenderer.send('resume-job', r.id); 
+            // Don't optimistically update UI - wait for backend response
+          }
+          else { 
+            ipcRenderer.send('pause-job', r.id); 
+            // Don't optimistically update UI - wait for backend response
+          }
+        };
+
+        const cancelBtn = document.createElement('button'); cancelBtn.textContent='❌ Cancel';
+        cancelBtn.onclick = ()=>{ if (confirm('Cancel this job?')) ipcRenderer.send('cancel-job', r.id); };
+
+        // Show pause/resume and cancel buttons for active jobs (both running and paused)
+        const statusLower = (r.status || '').toString().toLowerCase();
+        const showControlsForActiveJobs = statusLower === 'in_progress' || 
+                                         statusLower === 'in progress' || 
+                                         statusLower === 'paused' || 
+                                         statusLower === 'scheduled';
+
+        // Don't show controls for completed or cancelled jobs
+        const isFinishedJob = statusLower === 'completed' || 
+                             statusLower === 'cancelled' || 
+                             statusLower === 'failed';
+
+        // Only show Open/Save buttons when a path is available
+        if (r.path) {
+          controls.appendChild(openBtn);
+          controls.appendChild(downloadBtn);
+        }
+        
+        // Show pause/resume and cancel buttons only for active jobs (not finished)
+        if (showControlsForActiveJobs && !isFinishedJob) {
+          controls.appendChild(pauseBtn);
+          controls.appendChild(cancelBtn);
+        }
+        card.appendChild(controls);
+
+        return card;
+      }
+
+      async function loadAll(){
+        allReports = await loadReports();
+        filterAndRenderReports();
+      }
+
+      function filterAndRenderReports() {
+        const q = (searchInput.value || '').toLowerCase().trim();
+        filteredReports = allReports.filter(r => {
+          if (!q) return true;
+          const hay = (r.id + ' ' + (r.template_name || '') + ' ' + (Array.isArray(r.profiles) ? r.profiles.join(' ') : r.profiles || '')).toLowerCase();
+          return hay.includes(q);
+        });
+        
+        renderReports();
+      }
+
+      function renderReports() {
+        reportsContainer.innerHTML = '';
+        
+        if (filteredReports.length === 0) {
+          reportsContainer.innerHTML = '<div class="card small">No reports found</div>';
+          updatePaginationControls();
+          return;
+        }
+        
+        // Calculate pagination
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = Math.min(startIndex + itemsPerPage, filteredReports.length);
+        const reportsToShow = filteredReports.slice(startIndex, endIndex);
+        
+        // Render reports for current page
+        reportsToShow.forEach(r => reportsContainer.appendChild(renderReportItem(r)));
+        
+        // Update pagination controls
+        updatePaginationControls();
+      }
+
+      ipcRenderer.on('alert-created', (e, a) => loadAlerts());
+      ipcRenderer.on('job-paused', (e, id) => { loadAll(); });
+      ipcRenderer.on('job-resumed', (e, id) => { loadAll(); });
+      ipcRenderer.on('job-cancelled', (e, id) => { loadAll(); });
+      
+      // Handle resume failures for completed/inactive jobs
+      ipcRenderer.on('job-resume-failed', (e, data) => {
+        const { jobId, reason } = data;
+        alert(`❌ Cannot resume job ${jobId}:\n\n${reason}\n\nThis job has likely completed or been cancelled. Please check the job status in the reports list.`);
+        loadAll(); // Refresh to show current status
+      });
+      
+      // Handle real-time reports updates from backend
+      ipcRenderer.on('reports-updated', (e, updatedReports) => {
+        if (updatedReports) {
+          allReports = updatedReports;
+          loadReports();
+          setupAutoRefresh(); // Check if auto-refresh needed after update
+        }
+      });
+
+      // Handle real-time progress updates for active jobs
+      ipcRenderer.on('profile-message-progress', (e, progressData) => {
+        updateJobProgress(progressData);
+      });
+
+      // Auto-refresh functionality for active jobs
+      let autoRefreshInterval = null;
+      const AUTO_REFRESH_DELAY = 6000; // 5 seconds
+
+      function setupAutoRefresh() {
+        // Clear existing interval
+        if (autoRefreshInterval) {
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+        }
+
+        // Check if there are any active jobs
+        const hasActiveJobs = allReports.some(report => {
+          const status = (report.status || '').toString().toLowerCase();
+          return status === 'in_progress' || status === 'in progress' || 
+                 status === 'paused' || status === 'scheduled';
+        });
+
+        const indicator = document.getElementById('autoRefreshIndicator');
+        
+        if (hasActiveJobs) {
+          console.log('🔄 Starting auto-refresh for active jobs (every 5 seconds)');
+          indicator.style.display = 'inline-block';
+          autoRefreshInterval = setInterval(() => {
+            console.log('🔄 Auto-refreshing reports...');
+            loadAll(); // Refresh the reports
+          }, AUTO_REFRESH_DELAY);
+        } else {
+          console.log('✅ No active jobs, auto-refresh stopped');
+          indicator.style.display = 'none';
+        }
+      }
+
+      // Stop auto-refresh when page is hidden/unfocused
+      document.addEventListener('visibilitychange', () => {
+        const indicator = document.getElementById('autoRefreshIndicator');
+        
+        if (document.hidden && autoRefreshInterval) {
+          console.log('⏸️ Page hidden, pausing auto-refresh');
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+          indicator.style.display = 'none';
+        } else if (!document.hidden) {
+          console.log('👁️ Page visible, checking auto-refresh');
+          setupAutoRefresh();
+        }
+      });
+
+      // Cleanup auto-refresh on page unload
+      window.addEventListener('beforeunload', () => {
+        if (autoRefreshInterval) {
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+        }
+      });
+
+      function updateJobProgress(progressData) {
+        const { id: jobId, sent, failed, total, status, profile, number, patient } = progressData;
+        
+        // Find the job in allReports and update it
+        const jobIndex = allReports.findIndex(r => r.id === jobId);
+        if (jobIndex !== -1) {
+          allReports[jobIndex].record_sent = sent || 0;
+          allReports[jobIndex].record_failed = failed || 0;
+          
+          // Update the specific job card without full reload
+          updateJobCard(allReports[jobIndex]);
+          
+          console.log(`📊 Progress updated for ${jobId}: ${sent}/${total} sent, ${failed} failed`);
+        }
+      }
+
+      function updateJobCard(report) {
+        // Find the existing job card and update its progress info
+        const existingCards = document.querySelectorAll('.report-card');
+        existingCards.forEach(card => {
+          const cardTitle = card.querySelector('strong');
+          if (cardTitle && cardTitle.textContent.includes(report.id)) {
+            // Update the progress info in the card
+            const progressInfo = card.querySelector('.progress-info') || 
+                                card.appendChild(document.createElement('div'));
+            progressInfo.className = 'progress-info';
+            progressInfo.innerHTML = `
+              <div class="progress-bar" style="background: #e0e0e0; height: 4px; border-radius: 2px; margin: 5px 0;">
+                <div style="background: #4CAF50; height: 100%; width: ${(report.record_sent / report.record_total * 100) || 0}%; border-radius: 2px;"></div>
+              </div>
+              <div class="small">Sent: ${report.record_sent || 0}/${report.record_total || 0} | Failed: ${report.record_failed || 0}</div>
+            `;
+          }
+        });
+      }
+
+      async function loadDailyStats() {
+        try {
+          const stats = await ipcRenderer.invoke('get-daily-stats', 7);
+          const el = document.getElementById('dailyStats');
+          el.innerHTML = '';
+          // If all totals are zero (no records), show a friendly message
+          const totalSum = (stats || []).reduce((acc, s) => acc + ((s && s.data && s.data.total) ? Number(s.data.total) : 0), 0);
+          if (!stats || stats.length === 0 || totalSum === 0) {
+            el.innerHTML = '<div class="small">No records</div>';
+            return;
+          }
+
+          stats.forEach(s => {
+            const div = document.createElement('div');
+            div.style.marginBottom = '8px';
+            const total = s.data ? s.data.total || 0 : 0;
+            div.innerHTML = `<div style="display:flex;justify-content:space-between"><div><strong>${s.day}</strong></div><div class="small">Total: ${total}</div></div>`;
+            // per-profile breakdown
+            if (s.data && s.data.perProfile) {
+              const bp = document.createElement('div'); bp.className='small'; bp.style.marginTop='6px';
+              const items = Object.entries(s.data.perProfile).map(([p,c])=>`${p}: ${c}`);
+              bp.textContent = items.join(' • ');
+              div.appendChild(bp);
+            }
+            el.appendChild(div);
+          });
+        } catch (e) { console.error('get-daily-stats failed', e); }
+      }
+
+      (async function init(){
+        await loadSettingsToUI();
+        await loadAlerts();
+        await loadAll();
+        await loadDailyStats();
+        setupAutoRefresh(); // Start auto-refresh if needed
+      })();
+    </script>
+  </body>
+</html>

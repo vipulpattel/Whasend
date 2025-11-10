@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Whasend Profiles</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    .profile-card {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .profile-info {
+      flex: 1;
+    }
+    .profile-name {
+      font-weight: bold;
+    }
+    .profile-number {
+      color: green;
+    }
+    .inactive {
+      color: red;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Generic button style used across the page */
+    .btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1; /* default border for most buttons */
+      background: #ffffff;
+      cursor: pointer;
+      font-weight: 700;
+      color: #0f172a;
+      box-shadow: 0 2px 6px rgba(15,23,42,0.06);
+      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+      user-select: none;
+      box-sizing: border-box;
+      font-size: 14px;
+      line-height: 18px;
+      min-height: 36px;
+      margin: 4px;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15,23,42,0.12); }
+    .btn:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(15,23,42,0.06); }
+    .btn:focus { outline: 3px solid rgba(37,99,235,0.16); outline-offset: 2px; }
+    .btn.primary { background:#2563eb; color:#fff; border-color:transparent; }
+    .btn.primary:hover { background:#1e63d8; }
+    
+    /* Profile card buttons */
+    .buttons .btn {
+      margin: 0 2px;
+      font-size: 12px;
+      padding: 6px 10px;
+      min-height: 32px;
+    }
+
+    /* Edit Profile Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 400px;
+      max-width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: #374151;
+    }
+    .form-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .form-input.valid {
+      border-color: #059669;
+    }
+    .form-input.invalid {
+      border-color: #dc2626;
+    }
+    .validation-hint {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+      line-height: 1.3;
+    }
+    .modal-footer {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: #e5e7eb;
+      border-radius: 2px;
+      margin: 16px 0;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #2563eb;
+      width: 0%;
+      transition: width 0.3s ease;
+      animation: progress-animate 1s ease-in-out infinite;
+    }
+    @keyframes progress-animate {
+      0% { background-position: -200px 0; }
+      100% { background-position: calc(200px + 100%) 0; }
+    }
+    .warning-text {
+      color: #dc2626;
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    /* Top Info Bar */
+    #topInfoBar {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 16px 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      justify-content: space-between;
+    }
+    #topInfoBar div {
+      display: flex;
+      flex-direction: column;
+    }
+    #topInfoBar span {
+      font-size: 16px;
+      color: #2563eb;
+    }
+    #topInfoBar .label {
+      font-weight: 600;
+      font-size: 18px;
+      color: #374151;
+    }
+
+    /* Top Info Text - simple, non-modal, top-right corner */
+    #topInfoBox {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      z-index: 9999;
+      min-width: 160px;
+      max-width: 260px;
+      background: transparent; /* no modal background, simple text */
+      border: none;
+      border-radius: 6px;
+      box-shadow: none;
+      padding: 0 0 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: flex-end;
+      opacity: 0.9;
+      pointer-events: none; /* non-interactive */
+    }
+    #topInfoBox div { font-size: 12px; color: #0f172a; line-height:1.1; text-align:right }
+    #topInfoBox .label { font-weight:600; color:#2563eb; font-size:12px }
+    #topInfoBox .value { font-weight:600; color:#0f172a; font-size:12px }
+    @media (max-width: 800px) { #topInfoBox { display:none } }
+  </style>
+</head>
+<body>
+  <div id="topInfoBox">
+    <div><span class="label">Version:</span> <span id="appVersion" style="color:#2563eb;"></span></div>
+    <div><span class="label">Release Date:</span> <span id="releaseDate" style="color:#2563eb;"></span></div>
+    <div><span class="label">Last Import:</span> <span id="lastImportDate" style="padding:2px 10px;border-radius:6px;"></span></div>
+    <div><span class="label">Expiry:</span> <span id="expiryDate" style="padding:2px 10px;border-radius:6px;"></span></div>
+  </div>
+
+  <!-- Update status toast (non-interactive by default) -->
+  <div id="updateToast" style="position:fixed; top:14px; right:12px; z-index:10001; display:none;">
+    <div style="background:rgba(37,99,235,0.95); color:#fff; padding:8px 12px; border-radius:8px; min-width:180px; box-shadow:0 8px 24px rgba(0,0,0,0.12); font-weight:600; display:flex; gap:8px; align-items:center;">
+      <div id="updateToastIcon">🔄</div>
+      <div style="flex:1; text-align:left; font-size:13px;"> <span id="updateToastText">Checking for updates...</span>
+        <div id="updateProgressBar" style="height:6px; width:100%; background:rgba(255,255,255,0.15); border-radius:4px; margin-top:6px; display:none;">
+          <div id="updateProgressFill" style="height:100%; width:0%; background:rgba(255,255,255,0.9); border-radius:4px; transition:width 250ms linear;"></div>
+        </div>
+      </div>
+      <div id="updateToastAction" style="display:none; margin-left:6px;"></div>
+    </div>
+  </div>
+
+  <button class="btn primary" onclick="openAddProfile()">➕ Add New Profile</button>
+  <button class="btn" onclick="openTemplate()">Template</button>
+  <button class="btn" onclick="openReports()">Reports</button>
+  <!-- <button class="btn" onclick="openSchedules()">Schedules</button> -->
+  <button class="btn" onclick="openScheduleSequence()">Schedule</button>
+  <button class="btn" onclick="openPatients()">Customers</button>
+  <button class="btn" onclick="openSendMsg()">Send Message</button>
+  <button class="btn" onclick="loadProfiles()">🔄 Refresh</button>
+  <button class="btn" onclick="openScheduledResults()">📅 Scheduled Today</button>
+  <!--<button id="scheduledBtn" disabled title="Scheduled Today is temporarily disabled">📅 Scheduled Today</button>-->
+  <button class="btn" onclick="openSettings()">⚙️ Settings</button>
+
+  <h2>Profiles</h2>
+  <div id="profileList"></div>
+
+  <!-- Edit Profile Modal -->
+  <div id="editProfileModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">✏️ Edit Profile Name</h3>
+        <button class="modal-close" onclick="closeEditProfileModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Current Profile Name</label>
+          <input type="text" id="currentProfileName" class="form-input" readonly style="background:#f9fafb; color:#6b7280;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Profile Name</label>
+          <input type="text" id="newProfileName" class="form-input" placeholder="Enter new profile name" maxlength="50">
+          <div class="validation-hint">
+            ✅ Only letters, numbers, underscore (_), and hyphen (-)<br>
+            ✅ 2-50 characters, cannot start with number<br>
+            ❌ No spaces or special characters
+          </div>
+          <div class="warning-text">
+            ⚠️ <strong>Important:</strong> This will update the profile name across all customers, schedules, and system components. The process may take a few moments.
+          </div>
+        </div>
+        <div class="progress-bar" id="progressBar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div id="statusMessage" style="font-size:13px; color:#6b7280; margin-top:12px; display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeEditProfileModal()">Cancel</button>
+        <button class="btn primary" onclick="saveProfileName()">Update Profile Name</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- License expiry banner -->
+  <div id="licenseBanner" style="display:none; position:fixed; left:20px; right:20px; bottom:20px; background:rgba(255,244,229,0.95); color:#663c00; border:1px solid #ffecb5; padding:12px 16px; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.08); align-items:center; justify-content:space-between; z-index:1000;">
+    <div id="licenseBannerText" style="font-weight:600"></div>
+      <div style="margin-left:16px; display:flex; gap:8px; align-items:center">
+      <!-- <button id="licenseBannerAction" style="background:transparent;border:1px solid rgba(0,0,0,0.06);padding:6px 10px;border-radius:6px;cursor:pointer">Renew</button> -->
+      <!-- When expired we hide the real button and show a non-clickable message asking the user to contact admin -->
+      <!-- <span id="licenseBannerActionText" style="display:none;padding:6px 10px;border-radius:6px;color:#6b0000;font-weight:600;">Renew — Please contact admin.</span> -->
+      <button id="licenseBannerClose" style="background:transparent;border:none;padding:6px 8px;cursor:pointer;color:#666">✕</button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require("electron");
+    async function loadProfiles() {
+      const list = document.getElementById('profileList');
+      list.innerHTML = '';
+      try {
+        // Request full profile objects (name, number, pushname)
+        const profiles = await ipcRenderer.invoke('get-profiles');
+        
+        // Filter to show only active profiles
+        const activeProfiles = profiles.filter(p => p.is_active === 1 || p.is_active === true);
+        
+        if (activeProfiles.length === 0) {
+          list.innerHTML = '<p>No active profiles found. Click "Add New Profile" to get started.</p>';
+          return;
+        }
+        
+        activeProfiles.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'profile-card';
+
+          const info = document.createElement('div');
+          info.className = 'profile-info';
+
+          // Basic formatting for number: show as-is if available
+          const numberDisplay = p.number && p.number.length ? p.number : 'Unknown Number';
+
+          info.innerHTML = `
+            <div class="profile-name">${p.name}</div>
+            <div class="profile-number">${numberDisplay}</div>
+            <div>Status: Active</div>
+          `;
+
+          const buttons = document.createElement('div');
+          buttons.className = 'buttons';
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn';
+          editBtn.textContent = '✏️ Edit';
+          editBtn.onclick = () => openEditProfileModal(p.name);
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn';
+          delBtn.textContent = '🗑 Delete';
+          delBtn.onclick = () => deleteProfile(p.name);
+          // Verify button hidden - uncomment below lines to show again
+          // const verifyBtn = document.createElement('button');
+          // verifyBtn.className = 'btn primary';
+          // verifyBtn.textContent = '✅ Verify Status';
+          // verifyBtn.onclick = () => verifyProfile(p.name);
+          // buttons.appendChild(verifyBtn);
+          buttons.appendChild(editBtn);
+          buttons.appendChild(delBtn);
+
+          card.appendChild(info);
+          card.appendChild(buttons);
+          list.appendChild(card);
+        });
+      } catch (e) {
+        console.error('Failed to load profiles from main process:', e);
+        list.innerHTML = '<p>Error loading profiles. Please try refreshing.</p>';
+      }
+      
+      // Check license expiry after loading profiles
+      checkLicenseExpiry();
+    }
+
+    function openAddProfile() {
+      ipcRenderer.send("open-add-profile");
+    }
+
+    function openTemplate() {
+      ipcRenderer.send("open-template-window");
+    }
+    function openAddSchedule() {
+      ipcRenderer.send('open-add-schedule');
+    }
+    function openSchedules() {
+      ipcRenderer.send('open-schedules-window');
+    }
+    
+    function openScheduleSequence() {
+      ipcRenderer.send('open-schedule-sequence-window');
+    }
+    
+    function openReports() {
+      ipcRenderer.send("open-Reports-window");
+    }
+
+    function openPatients() {
+      ipcRenderer.send("open-Patients-window");
+    }
+
+    function openSendMsg() {
+      ipcRenderer.send("open-Sendmsg");  
+    }
+
+    function openScheduledResults() {
+      ipcRenderer.send('open-scheduled-results');
+    }
+
+    function openSettings() {
+      ipcRenderer.send("open-settings-window");
+    }
+
+    function deleteProfile(profileName) {
+      if (confirm(`Are you sure you want to delete profile "${profileName}"?`)) {
+        ipcRenderer.send("delete-profile", profileName);
+      }
+    }
+
+    // Edit Profile Modal Functions
+    function openEditProfileModal(profileName) {
+      document.getElementById('currentProfileName').value = profileName;
+      document.getElementById('newProfileName').value = '';
+      document.getElementById('statusMessage').style.display = 'none';
+      document.getElementById('progressBar').style.display = 'none';
+      document.getElementById('editProfileModal').style.display = 'flex';
+      
+      // Add real-time validation to input field
+      const newNameInput = document.getElementById('newProfileName');
+      newNameInput.addEventListener('input', function() {
+        const value = this.value;
+        const errors = validateProfileName(value);
+        const warningEl = this.parentNode.querySelector('.warning-text');
+        
+        if (value && errors.length > 0) {
+          warningEl.innerHTML = `❌ <strong>Invalid:</strong> ${errors[0]}`;
+          warningEl.style.color = '#dc2626';
+          this.style.borderColor = '#dc2626';
+        } else if (value && errors.length === 0) {
+          warningEl.innerHTML = `✅ <strong>Valid profile name</strong>`;
+          warningEl.style.color = '#059669';
+          this.style.borderColor = '#059669';
+        } else {
+          warningEl.innerHTML = `⚠️ <strong>Important:</strong> This will update the profile name across all customers, schedules, and system components. The process may take a few moments.`;
+          warningEl.style.color = '#dc2626';
+          this.style.borderColor = '#d1d5db';
+        }
+      });
+    }
+
+    function closeEditProfileModal() {
+      document.getElementById('editProfileModal').style.display = 'none';
+    }
+
+    // Profile name validation function
+    function validateProfileName(name) {
+      const errors = [];
+      
+      // Check if empty
+      if (!name || name.trim() === '') {
+        errors.push('Profile name cannot be empty');
+      }
+      
+      // Check length (minimum 2, maximum 50 characters)
+      if (name.length < 2) {
+        errors.push('Profile name must be at least 2 characters long');
+      }
+      
+      if (name.length > 50) {
+        errors.push('Profile name cannot exceed 50 characters');
+      }
+      
+      // Check for spaces
+      if (/\s/.test(name)) {
+        errors.push('Profile name cannot contain spaces');
+      }
+      
+      // Check for invalid characters (only allow letters, numbers, underscore, hyphen)
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        errors.push('Profile name can only contain letters, numbers, underscore (_), and hyphen (-)');
+      }
+      
+      // Check if starts with number
+      if (/^[0-9]/.test(name)) {
+        errors.push('Profile name cannot start with a number');
+      }
+      
+      // Check for reserved names
+      const reservedNames = ['all', 'none', 'null', 'undefined', 'admin', 'system', 'default'];
+      if (reservedNames.includes(name.toLowerCase())) {
+        errors.push('Profile name cannot be a reserved word');
+      }
+      
+      return errors;
+    }
+
+    async function saveProfileName() {
+      const currentName = document.getElementById('currentProfileName').value.trim();
+      const newName = document.getElementById('newProfileName').value.trim();
+      const statusEl = document.getElementById('statusMessage');
+      const progressEl = document.getElementById('progressBar');
+      const progressFill = document.getElementById('progressFill');
+      
+      // Validate new profile name
+      const validationErrors = validateProfileName(newName);
+      if (validationErrors.length > 0) {
+        alert('❌ Invalid Profile Name:\n\n' + validationErrors.join('\n'));
+        return;
+      }
+      
+      if (currentName === newName) {
+        alert('New name must be different from current name');
+        return;
+      }
+      
+      if (!confirm(`Are you sure you want to rename profile "${currentName}" to "${newName}"?\n\nThis will update all customers, schedules, and WhatsApp sessions. This process cannot be undone.`)) {
+        return;
+      }
+
+      // Disable buttons and show progress
+      const buttons = document.querySelectorAll('#editProfileModal .btn');
+      buttons.forEach(btn => btn.disabled = true);
+      
+      progressEl.style.display = 'block';
+      statusEl.style.display = 'block';
+      statusEl.textContent = '🔄 Starting profile name update...';
+      
+      try {
+        // Start the rename process
+        const result = await ipcRenderer.invoke('rename-profile-comprehensive', {
+          oldName: currentName,
+          newName: newName
+        });
+        
+        if (result.success) {
+          // Show success
+          progressFill.style.width = '100%';
+          statusEl.innerHTML = `✅ Profile renamed successfully!<br><small>${result.summary}</small>`;
+          statusEl.style.color = '#059669';
+          
+          // Close modal and refresh after 2 seconds
+          setTimeout(() => {
+            closeEditProfileModal();
+            loadProfiles();
+            alert(`✅ Profile "${currentName}" has been successfully renamed to "${newName}"\n\n${result.summary}`);
+          }, 2000);
+          
+        } else {
+          throw new Error(result.error || 'Unknown error occurred');
+        }
+        
+      } catch (error) {
+        console.error('Profile rename error:', error);
+        progressFill.style.width = '0%';
+        statusEl.innerHTML = `❌ Failed to rename profile: ${error.message}`;
+        statusEl.style.color = '#dc2626';
+      } finally {
+        // Re-enable buttons
+        buttons.forEach(btn => btn.disabled = false);
+      }
+    }
+
+    // Show license expiry banner when expiry within threshold days
+    async function checkLicenseExpiry() {
+      try {
+        const info = await ipcRenderer.invoke('get-license-info');
+  if (!info) return;
+      // Try several possible fields for expiry (stored shape may vary)
+      const expiryRaw = info.expiry || info.ExpiryDate || info.expiryDate || (info.raw && (info.raw.ExpiryDate || info.raw.expiryDate || info.raw.Expiry || info.raw.expiry)) || null;
+      let expiryDate = expiryRaw ? new Date(expiryRaw) : null;
+        if (!expiryDate || isNaN(expiryDate.getTime())) {
+          // try parsing YYYY-MM-DD (ensure UTC)
+          const maybe = expiryRaw && expiryRaw.toString().trim();
+          if (maybe && /^\d{4}-\d{1,2}-\d{1,2}$/.test(maybe)) {
+            const parts = maybe.split('-');
+            expiryDate = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+          }
+        }
+        if (!expiryDate || isNaN(expiryDate.getTime())) return;
+
+        const now = new Date();
+        const diffMs = expiryDate.getTime() - now.getTime();
+        const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        // Debug logs to help troubleshooting
+        try {
+          console.log('licenseInfo (raw):', info);
+          console.log('expiryRaw:', expiryRaw);
+          console.log('parsed expiryDate (ISO):', expiryDate.toISOString());
+          console.log('daysUntilExpiry:', days);
+        } catch (e) { /* ignore logging errors */ }
+
+        // Respect dismissal until this expiry (store key unique per expiry)
+        const dismissedKey = 'licenseBannerDismissed_' + (expiryRaw || '');
+        if (localStorage.getItem(dismissedKey)) return;
+
+        const threshold = 7; // show when <= 7 days
+        const el = document.getElementById('licenseBanner');
+        const txt = document.getElementById('licenseBannerText');
+
+        if (days <= threshold && days >= 0) {
+          txt.textContent = `⚠️ Your license expires in ${days} day${days === 1 ? '' : 's'} (${expiryRaw}). Please Contact Admin to Renew.`;
+          el.style.background = 'rgba(255,244,229,0.95)';
+          el.style.color = '#663c00';
+          el.style.display = 'flex';
+
+          // Ensure the clickable Renew button is visible for pre-expiry warnings
+          //const actionBtn = document.getElementById('licenseBannerAction');
+          //const actionText = document.getElementById('licenseBannerActionText');
+          //if (actionBtn) { actionBtn.style.display = 'inline-block'; actionBtn.onclick = function(){ ipcRenderer.send('open-Reports-window'); }; }
+         /// if (actionText) { actionText.style.display = 'none'; }
+          //document.getElementById('licenseBannerClose').onclick = function(){ el.style.display = 'none'; try { localStorage.setItem(dismissedKey, '1'); } catch (e) {} };
+        } else if (days < 0) {
+          txt.textContent = `❌ Your license expired on ${expiryRaw}. Please Contact Admin to Renew.`;
+          el.style.background = 'rgba(255,235,235,0.98)';
+          el.style.color = '#6b0000';
+          el.style.display = 'flex';
+          // For expired licenses: hide the actionable Renew button and show a message instructing admin contact
+          //const expiredBtn = document.getElementById('licenseBannerAction');
+          //const expiredText = document.getElementById('licenseBannerActionText');
+         // if (expiredBtn) { expiredBtn.style.display = 'none'; expiredBtn.onclick = null; }
+         // if (expiredText) { expiredText.textContent = '❌ Expired — Please contact admin.'; expiredText.style.display = 'inline-block'; }
+        //  document.getElementById('licenseBannerClose').onclick = function(){ el.style.display = 'none'; };
+        }
+      } catch (e) { console.error('checkLicenseExpiry failed', e); }
+    }
+
+    // run on load
+    checkLicenseExpiry();
+
+    // (debug helpers removed for production)
+
+    // Also update banner if login-data arrives later
+    ipcRenderer.on('login-data', (event, licenseInfo) => { try { checkLicenseExpiry(); } catch (e) {} });
+    ipcRenderer.on("delete-profile-success", (event, profileName) => {
+      alert(`✅ Profile "${profileName}" deleted successfully.`);
+      loadProfiles();
+      checkLicenseExpiry(); // Check license status after profile deletion
+    });
+
+    ipcRenderer.on("delete-profile-failed", (event, profileName) => {
+      alert(`❌ Failed to delete profile "${profileName}". It may not exist.`);
+      loadProfiles();
+    });
+
+    function verifyProfile(profileName) {
+      ipcRenderer.send("verify-profile", profileName);
+    }
+
+    // Handle verify result including internet connectivity checks
+    ipcRenderer.on("verify-result", (event, result) => {
+      const { profileName, status, error } = result;
+      
+      if (status === 'no-internet') {
+        alert(`🌐 ❌ Internet Connection Error\n\nProfile: ${profileName}\n\n${error}\n\nPlease check your internet connection and try again.`);
+      } else if (status === 'active') {
+        alert(`✅ Profile "${profileName}" is active and connected to WhatsApp.`);
+      } else if (status === 'inactive') {
+        alert(`❌ Profile "${profileName}" is inactive or not found.`);
+      } else if (status === 'disconnected') {
+        alert(`⚠️ Profile "${profileName}" was disconnected from WhatsApp.`);
+      } else if (status === 'auth_failure') {
+        alert(`🔑 Authentication failed for profile "${profileName}".\n\nThe profile may need to be re-authenticated. Please scan the QR code again.`);
+      } else if (status === 'timeout') {
+        alert(`⏱️ Profile "${profileName}" verification timed out.\n\nThis may happen if WhatsApp Web is taking too long to respond.`);
+      } else if (status === 'error') {
+        alert(`❌ Error verifying profile "${profileName}": ${error || 'Unknown error'}\n\nThis might be due to browser connection issues or WhatsApp Web problems.`);
+      }
+      
+      // Refresh profiles list after verification
+      loadProfiles();
+    });
+
+    // Handle connectivity alerts
+    ipcRenderer.on("connectivity-alert", (event, alert) => {
+      const { type, message } = alert;
+      
+      if (type === 'lost') {
+        alert(`🌐 ❌ ${message}\n\nThe application will continue working but message sending may fail until connection is restored.`);
+      } else if (type === 'restored') {
+        alert(`🌐 ✅ ${message}`);
+      }
+    });
+
+    ipcRenderer.on("refresh-profiles", () => {
+      loadProfiles();
+      checkLicenseExpiry(); // Check license status after refresh
+    });
+
+    ipcRenderer.on("profile-status", (event, { profileName, isActive }) => {
+      alert(`Profile ${profileName} is currently ${isActive ? "✅ Active" : "❌ Inactive"}`);
+      loadProfiles();
+    });
+
+    // Handle daily limit reached alerts
+    ipcRenderer.on("daily-limit-reached", (event, data) => {
+      const { profileName, dailyLimit, sentToday, message, skippedCount } = data;
+      
+      let alertMessage = `⚠️ DAILY LIMIT REACHED\n\n`;
+      alertMessage += `Profile: ${profileName}\n`;
+      alertMessage += `Daily Limit: ${dailyLimit} messages\n`;
+      alertMessage += `Already Sent Today: ${sentToday} messages\n\n`;
+      alertMessage += message;
+      
+      if (skippedCount && skippedCount > 0) {
+        alertMessage += `\n\n📊 Impact: ${skippedCount} messages skipped for this profile`;
+      }
+      
+      alertMessage += `\n\n💡 Tip: You can adjust daily limits in the profile settings or wait until tomorrow to continue sending.`;
+      
+      alert(alertMessage);
+    });
+
+    // Handle profile rename progress updates
+    ipcRenderer.on('profile-rename-progress', (event, data) => {
+      const { step, total, message, progress } = data;
+      const statusEl = document.getElementById('statusMessage');
+      const progressFill = document.getElementById('progressFill');
+      
+      if (statusEl && progressFill) {
+        statusEl.textContent = `🔄 Step ${step}/${total}: ${message}`;
+        progressFill.style.width = `${progress}%`;
+      }
+    });
+
+    // Close modal on outside click
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'editProfileModal') {
+        closeEditProfileModal();
+      }
+    });
+
+    ipcRenderer.on("confirm-exit", (event, data) => {
+      let message = "";
+      
+      if (data.hasActiveMessages) {
+        // There are messages currently being sent or paused
+        const activeCount = data.dbJobs.filter(job => {
+          const status = (job.status || '').toLowerCase();
+          return status === 'in_progress' || status === 'paused';
+        }).length;
+        
+        message = `⚠️ WARNING: Message sending is currently active!\n\n`;
+        message += `There are ${activeCount} messages in progress or paused state.\n`;
+        message += `If you close now, all message sending will be cancelled and may cause issues.\n\n`;
+        message += `Are you sure you want to close and cancel all message sending?`;
+      } else if (data.dbJobs.length > 0) {
+        // There are scheduled jobs but no active sending
+        message = `⚠️ There are ${data.dbJobs.length} scheduled jobs.\n`;
+        message += `Do you really want to quit?\n\nScheduled jobs will be cancelled.`;
+      } else {
+        // Only controller jobs, no database jobs
+        message = `⚠️ There are ${data.jobIds.length} jobs still in progress.\n`;
+        message += `Do you really want to quit?\n\nIf yes, they will be cancelled.`;
+      }
+
+      const confirmClose = confirm(message);
+
+      if (confirmClose) {
+        ipcRenderer.send("force-exit", data.jobIds);
+      }
+    });
+    
+    ipcRenderer.on("confirmeasy-exit", () => {
+      const confirmClose = confirm(
+        `Are you sure you want to close the application?`
+      );
+
+      if (confirmClose) {
+        ipcRenderer.send("normal-exit");
+      }
+    });
+
+    // Top Info Bar script
+    async function loadTopInfoBar() {
+      // Get version from package.json
+      const pkg = await ipcRenderer.invoke('get-app-package');
+      document.getElementById('appVersion').textContent = pkg.version || 'N/A';
+      document.getElementById('releaseDate').textContent = pkg.releaseDate || (pkg.buildDate || 'N/A');
+      // Get last import date from patients table
+      const syncReport = await ipcRenderer.invoke('get-sync-report');
+      let lastDateElem = document.getElementById('lastImportDate');
+      if (syncReport && syncReport.success && syncReport.summary && syncReport.summary.latestFiledate) {
+        const lastDate = syncReport.summary.latestFiledate;
+        const lastDateObj = new Date(lastDate);
+        const now = new Date();
+        const diffDays = Math.floor((now - lastDateObj) / (1000*60*60*24));
+        // Show date only in YYYY-MM-DD form. Fall back conservatively if parsing fails.
+        let dateOnly = 'N/A';
+        try {
+          if (lastDate) {
+            dateOnly = String(lastDate).split('T')[0];
+          } else if (!isNaN(lastDateObj.getTime())) {
+            dateOnly = lastDateObj.toISOString().split('T')[0];
+          }
+        } catch (err) {
+          dateOnly = lastDateObj.toLocaleDateString();
+        }
+        lastDateElem.textContent = dateOnly;
+        if (diffDays >= 10) {
+          lastDateElem.style.background = '#fee2e2';
+          lastDateElem.style.color = '#b91c1c';
+          lastDateElem.style.fontWeight = 'bold';
+        } else {
+          lastDateElem.style.background = '#e0f2fe';
+          lastDateElem.style.color = '#2563eb';
+          lastDateElem.style.fontWeight = 'normal';
+        }
+      } else {
+        lastDateElem.textContent = 'N/A';
+        lastDateElem.style.background = '#f3f4f6';
+        lastDateElem.style.color = '#6b7280';
+      }
+
+      // Populate Expiry using the same source as checkLicenseExpiry()
+      try {
+        const expiryElem = document.getElementById('expiryDate');
+        if (expiryElem) {
+          const info = await ipcRenderer.invoke('get-license-info');
+          let expiryRaw = null;
+          if (info) {
+            expiryRaw = info.expiry || info.ExpiryDate || info.expiryDate || (info.raw && (info.raw.ExpiryDate || info.raw.expiryDate || info.raw.Expiry || info.raw.expiry)) || null;
+          }
+          let expiryText = 'N/A';
+          if (expiryRaw) {
+            try { expiryText = String(expiryRaw).split('T')[0]; } catch (e) { expiryText = String(expiryRaw); }
+            const ed = new Date(expiryText + 'T00:00:00Z');
+            if (!isNaN(ed.getTime())) {
+              const now2 = new Date();
+              const diffDays2 = Math.ceil((ed.getTime() - now2.getTime()) / (1000*60*60*24));
+              if (diffDays2 < 0) {
+                expiryElem.style.background = '#fee2e2'; expiryElem.style.color = '#b91c1c'; expiryElem.style.fontWeight = 'bold';
+              } else if (diffDays2 <= 7) {
+                expiryElem.style.background = '#fff7ed'; expiryElem.style.color = '#b45309'; expiryElem.style.fontWeight = '600';
+              } else {
+                expiryElem.style.background = 'transparent'; expiryElem.style.color = '#0f172a'; expiryElem.style.fontWeight = '600';
+              }
+            }
+          }
+          expiryElem.textContent = expiryText || 'N/A';
+        }
+      } catch (e) { /* ignore expiry display failures */ }
+    }
+    // Get package.json info from main process
+    ipcRenderer.on('app-package-info', (event, pkg) => {
+      document.getElementById('appVersion').textContent = pkg.version || 'N/A';
+      document.getElementById('releaseDate').textContent = pkg.releaseDate || (pkg.buildDate || 'N/A');
+    });
+    loadTopInfoBar();
+
+    loadProfiles();
+    checkLicenseExpiry(); // Check license status on page load
+
+    // --- Auto-updater UI handlers ---
+    const updateToast = document.getElementById('updateToast');
+    const updateToastText = document.getElementById('updateToastText');
+    const updateToastIcon = document.getElementById('updateToastIcon');
+    const updateProgressBar = document.getElementById('updateProgressBar');
+    const updateProgressFill = document.getElementById('updateProgressFill');
+    const updateToastAction = document.getElementById('updateToastAction');
+    let updateAutoHideTimer = null;
+
+    function showUpdateToast(text, autoHide = false, hideAfterMs = 3000) {
+      try {
+        if (updateAutoHideTimer) { clearTimeout(updateAutoHideTimer); updateAutoHideTimer = null; }
+        updateToastText.textContent = text || '';
+        updateToastIcon.textContent = '🔄';
+        updateProgressBar.style.display = 'none';
+        updateProgressFill.style.width = '0%';
+        updateToastAction.innerHTML = '';
+        updateToastAction.style.display = 'none';
+        updateToast.style.display = 'block';
+        if (autoHide && hideAfterMs > 0) {
+          updateAutoHideTimer = setTimeout(() => { hideUpdateToast(); }, hideAfterMs);
+        }
+      } catch (e) { console.warn('showUpdateToast failed', e); }
+    }
+
+    function hideUpdateToast() {
+      try { updateToast.style.display = 'none'; if (updateAutoHideTimer) { clearTimeout(updateAutoHideTimer); updateAutoHideTimer = null; } } catch (e) {}
+    }
+
+    ipcRenderer.on('update-checking', () => {
+      showUpdateToast('Checking for updates...', false);
+    });
+
+    ipcRenderer.on('update-available', (event, info) => {
+      showUpdateToast('Update available: ' + (info && info.version ? info.version : ''), false);
+    });
+
+    ipcRenderer.on('update-not-available', (event, info) => {
+      showUpdateToast('No updates available', true, 2500);
+    });
+
+    ipcRenderer.on('update-error', (event, msg) => {
+      showUpdateToast('Update error: ' + (msg || 'unknown'), true, 6000);
+    });
+
+    ipcRenderer.on('update-progress', (event, progressObj) => {
+      try {
+        const pct = Math.floor((progressObj && progressObj.percent) ? progressObj.percent : (progressObj && progressObj.percent === 0 ? 0 : (progressObj && progressObj.transferred && progressObj.total ? (progressObj.transferred / progressObj.total) * 100 : 0)));
+        updateProgressBar.style.display = 'block';
+        updateProgressFill.style.width = (pct ? Math.min(100, pct) : 0) + '%';
+        updateToastIcon.textContent = '⬇️';
+        updateToastText.textContent = `Downloading update... ${Math.round(pct)}%`;
+        updateToast.style.display = 'block';
+      } catch (e) { console.warn('update-progress handler failed', e); }
+    });
+
+    ipcRenderer.on('update-downloaded', (event, info) => {
+      try {
+        updateToastIcon.textContent = '✅';
+        updateToastText.textContent = 'Update downloaded. Click Install to restart.';
+        updateProgressBar.style.display = 'none';
+        // show install button
+        updateToastAction.style.display = 'block';
+        updateToastAction.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.className = 'btn primary';
+        btn.textContent = 'Install';
+        btn.onclick = async () => {
+          try {
+            btn.disabled = true;
+            updateToastText.textContent = 'Installing update...';
+            const res = await ipcRenderer.invoke('install-update');
+            if (!res || !res.success) {
+              showUpdateToast('Failed to install update: ' + (res && res.error ? res.error : 'unknown'), true, 6000);
+            }
+          } catch (e) {
+            showUpdateToast('Install failed: ' + (e && e.message ? e.message : String(e)), true, 6000);
+          }
+        };
+        updateToastAction.appendChild(btn);
+        updateToast.style.display = 'block';
+      } catch (e) { console.warn('update-downloaded handler failed', e); }
+    });
+
+    // Hide toast on click (optional convenience)
+    updateToast.addEventListener('click', () => { hideUpdateToast(); });
+    
+    // Show upload customers Excel notification on app start
+    setTimeout(() => {
+      alert("Please upload your updated customers Excel if not updated yet.");
+    }, 1000); // Small delay to let the page load properly
+    
+  </script>
+</body>
+</html>

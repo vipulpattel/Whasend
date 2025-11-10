@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Template Sequence — Whasend</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:20px;background:#f5f5f5}
+    .container{max-width:800px;margin:0 auto;background:#fff;padding:20px;border-radius:8px}
+    table{width:100%;border-collapse:collapse;margin:20px 0}
+    th,td{padding:12px;text-align:left;border-bottom:1px solid #ddd}
+    th{background:#f8f9fa}
+    select{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
+    .btn{padding:10px 20px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer;margin:5px}
+    .btn:hover{background:#0056b3}
+    .sequence-num{background:#007bff;color:white;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;margin:0 auto}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Template Sequence</h2>
+    <p>Select templates and assign sequence numbers (1, 2, 3...):</p>
+    
+    <div style="margin-bottom:15px">
+      <button class="btn" onclick="loadSavedSequence()" style="background:#28a745">📂 Load Last Saved</button>
+      <span id="sequenceStatus" style="margin-left:10px;color:#666;font-size:14px"></span>
+    </div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th style="width:100px">Sequence</th>
+          <th>Template Name</th>
+          <th style="width:150px">Set Position</th>
+        </tr>
+      </thead>
+      <tbody id="templateTable">
+        <!-- Templates will be loaded here -->
+      </tbody>
+    </table>
+    
+    <button class="btn" onclick="saveSequence()">Save Sequence</button>
+    <button class="btn" onclick="resetAll()">Reset All</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    let templates = [];
+    let sequence = {}; // {templateId: position}
+
+    async function loadTemplates() {
+      try {
+        templates = await ipcRenderer.invoke('get-templates') || [];
+        await loadSavedSequence(); // Load existing sequence if any
+        renderTable();
+      } catch (e) {
+        alert('Error loading templates');
+      }
+    }
+
+    async function loadSavedSequence() {
+      try {
+        const sequences = await ipcRenderer.invoke('get-template-sequences') || [];
+        const statusEl = document.getElementById('sequenceStatus');
+        
+        if (sequences.length > 0) {
+          // Load the most recent sequence
+          const latestSequence = sequences[0];
+          console.log('Loading saved sequence:', latestSequence);
+          
+          // Clear current sequence first
+          sequence = {};
+          
+          // Apply saved sequence to current sequence object
+          if (latestSequence.steps && Array.isArray(latestSequence.steps)) {
+            latestSequence.steps.forEach(step => {
+              sequence[step.templateId] = step.sequenceNumber;
+            });
+            
+            statusEl.textContent = `✅ Loaded: ${latestSequence.steps.length} templates assigned`;
+            statusEl.style.color = '#28a745';
+          } else {
+            statusEl.textContent = '⚠️ No steps found in saved sequence';
+            statusEl.style.color = '#ffc107';
+          }
+          
+          console.log('Applied sequence:', sequence);
+          renderTable(); // Re-render table to show loaded sequence
+        } else {
+          statusEl.textContent = '📝 No saved sequences found';
+          statusEl.style.color = '#6c757d';
+        }
+      } catch (e) {
+        console.error('Error loading saved sequence:', e);
+        const statusEl = document.getElementById('sequenceStatus');
+        if (statusEl) {
+          statusEl.textContent = '❌ Error loading sequence';
+          statusEl.style.color = '#dc3545';
+        }
+      }
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('templateTable');
+      
+      if (templates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3">No templates found</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = templates.map((template, index) => {
+        const templateId = template.id || index;
+        const options = makeOptions(templateId);
+        const currentPos = sequence[templateId] || '';
+        const displayPos = currentPos ? `<div class="sequence-num">${currentPos}</div>` : '-';
+        
+        return `
+          <tr>
+            <td>${displayPos}</td>
+            <td><strong>${template.name || 'Template ' + (index + 1)}</strong></td>
+            <td>
+              <select onchange="setPosition('${templateId}', this.value)">
+                <option value="">Choose position...</option>
+                ${options}
+              </select>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function makeOptions(currentTemplateId) {
+      let options = '';
+      for (let i = 1; i <= templates.length; i++) {
+        // Check if this number is already used by another template
+        const isUsedByOther = Object.entries(sequence).some(([templateId, pos]) => 
+          templateId != currentTemplateId && parseInt(pos) === i
+        );
+        const isSelected = sequence[currentTemplateId] == i;
+        
+        if (isUsedByOther) {
+          options += `<option value="${i}" disabled>${i} (used)</option>`;
+        } else {
+          options += `<option value="${i}" ${isSelected ? 'selected' : ''}>${i}</option>`;
+        }
+      }
+      return options;
+    }
+
+    function setPosition(templateId, position) {
+      console.log('Setting position:', templateId, position); // Debug log
+      
+      if (position) {
+        sequence[templateId] = parseInt(position);
+      } else {
+        delete sequence[templateId];
+      }
+      
+      console.log('Current sequence:', sequence); // Debug log
+      renderTable();
+    }
+
+    async function saveSequence() {
+      console.log('Saving sequence:', sequence); // Debug
+      console.log('Templates:', templates); // Debug
+      
+      if (Object.keys(sequence).length === 0) {
+        alert('Please set at least one template position');
+        return;
+      }
+      
+      const steps = [];
+      for (const [templateId, position] of Object.entries(sequence)) {
+        const template = templates.find(t => t.id == templateId || t.id === templateId);
+        console.log('Looking for template:', templateId, 'Found:', template); // Debug
+        
+        if (template) {
+          steps.push({
+            sequenceNumber: position,
+            templateId: templateId,
+            templateName: template.name || 'Template'
+          });
+        } else {
+          // Fallback: find by index if ID doesn't match
+          const templateByIndex = templates[parseInt(templateId)];
+          if (templateByIndex) {
+            steps.push({
+              sequenceNumber: position,
+              templateId: templateId,
+              templateName: templateByIndex.name || 'Template'
+            });
+          }
+        }
+      }
+      
+      console.log('Steps to save:', steps); // Debug
+      
+      if (steps.length === 0) {
+        alert('No valid templates found to save');
+        return;
+      }
+      
+      try {
+        const result = await ipcRenderer.invoke('save-template-sequence', {
+          name: 'Template Sequence - ' + new Date().toLocaleTimeString(),
+          description: 'Simple sequence with ' + steps.length + ' templates',
+          steps: steps
+        });
+        
+        console.log('Save result:', result); // Debug
+        
+        if (result.success) {
+          alert('Sequence saved successfully!');
+          const statusEl = document.getElementById('sequenceStatus');
+          if (statusEl) {
+            statusEl.textContent = `✅ Saved: ${steps.length} templates`;
+            statusEl.style.color = '#28a745';
+          }
+        } else {
+          alert('Save failed: ' + (result.error || 'Unknown error'));
+        }
+      } catch (e) {
+        console.error('Save error:', e);
+        alert('Error saving: ' + e.message);
+      }
+    }
+
+    function resetAll() {
+      sequence = {};
+      renderTable();
+    }
+
+    loadTemplates();
+  </script>
+</body>
+</html>

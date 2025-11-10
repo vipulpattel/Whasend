@@ -1,0 +1,34 @@
+﻿# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+release/
+release-*/
+*.exe
+*.zip
+*.blockmap
+
+# Electron / OS
+.DS_Store
+Thumbs.db
+*.local
+
+# Runtime data (user data)
+Jsonlogs/
+logs/
+uploadedexcel/
+uploadedImages/
+patientExcel/
+dndExcel/
+samples/
+.wwebjs_cache/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*

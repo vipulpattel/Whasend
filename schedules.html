@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Schedules</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .card { border: 1px solid #e6e9ee; border-radius: 8px; padding: 12px; background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,0.06); }
+  .card h3 { margin: 0 0 8px 0; font-size: 16px; }
+  .card p { margin: 6px 0; font-size: 13px; color: #333; }
+  .add-card { display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight: 600; font-size: 18px; color: #555; }
+  .buttons { display:flex; gap:8px; margin-top:8px; }
+  /* button styles */
+  .btn{padding:6px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer;font-size:13px;display:inline-flex;gap:6px;align-items:center}
+  .btn:focus{outline:2px solid rgba(37,99,235,0.12)}
+  .btn-edit{background:#2563eb;color:#ffffff;border-color:transparent;box-shadow:0 6px 12px rgba(37,99,235,0.08);font-weight:600}
+  .btn-edit:hover{background:#1e40af}
+  .btn-delete{background:#ef4444;color:#ffffff;border-color:transparent;box-shadow:0 6px 12px rgba(239,68,68,0.06);font-weight:600}
+  .btn-delete:hover{background:#dc2626}
+  .add-card{background:linear-gradient(90deg,#ffffff,#fbfdff);border:1px dashed #e6e9ee}
+  </style>
+</head>
+<body>
+  <h2>Schedules</h2>
+  <div id="grid" class="grid"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    async function loadSchedules() {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+      try {
+        const schedules = await ipcRenderer.invoke('get-schedules');
+        // fetch profiles to resolve display names
+        let profileNameSet = new Map();
+        try {
+          const profiles = await ipcRenderer.invoke('get-profiles');
+          for (const p of (profiles || [])) {
+            try { if (p && p.name) profileNameSet.set(String(p.name), p.name); } catch (e) {}
+          }
+        } catch (e) { profileNameSet = new Map(); }
+
+        // Add 'Add Schedule' card first
+        const addCard = document.createElement('div');
+        addCard.className = 'card add-card';
+        addCard.innerHTML = '➕ Add Schedule';
+        addCard.onclick = () => ipcRenderer.send('open-add-schedule');
+        grid.appendChild(addCard);
+
+        if (!schedules || schedules.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'card';
+          empty.innerHTML = '<p>No schedules yet. Click Add Schedule to create one.</p>';
+          grid.appendChild(empty);
+          return;
+        }
+
+        schedules.forEach(s => {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const title = document.createElement('h3');
+          title.textContent = s.name;
+
+          const tpl = document.createElement('p');
+          tpl.innerHTML = `<strong>Template:</strong> ${s.templateName || '(none)'} `;
+
+          const days = document.createElement('p');
+          days.innerHTML = `<strong>Days:</strong> ${s.days}`;
+
+          const profiles = document.createElement('p');
+          let profileDisplay = 'All';
+          if (s.profiles && s.profiles.length) {
+            try {
+              profileDisplay = s.profiles.map(p => {
+                if (!p) return '';
+                if (typeof p === 'string') return profileNameSet.get(p) || p;
+                if (typeof p === 'object') return p.name || p.toString();
+                return String(p);
+              }).filter(Boolean).join(', ');
+            } catch (e) { profileDisplay = (s.profiles || []).join(', '); }
+          }
+          profiles.innerHTML = `<strong>Override Profiles:</strong> ${profileDisplay}`;
+
+          const btns = document.createElement('div');
+          btns.className = 'buttons';
+
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn btn-edit';
+          editBtn.title = 'Edit schedule';
+          editBtn.innerHTML = '✏️ <span>Edit</span>';
+          editBtn.onclick = async () => {
+            // open add-schedule popup prefilled by loading the schedule in the popup via query param
+            ipcRenderer.send('open-add-schedule');
+            // Small hack: after popup opens, we can send an event to request the schedule data if needed.
+            setTimeout(async () => {
+              const data = await ipcRenderer.invoke('get-schedule', s.name);
+              ipcRenderer.send('prefill-schedule', data);
+            }, 300);
+          };
+
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn btn-delete';
+          delBtn.title = 'Delete schedule';
+          delBtn.innerHTML = '🗑 <span>Delete</span>';
+          delBtn.onclick = async () => {
+            if (!confirm(`Delete schedule "${s.name}"?`)) return;
+            const res = await ipcRenderer.invoke('delete-schedule', s.name);
+            if (res && res.success) {
+              alert('Deleted');
+              loadSchedules();
+            } else {
+              alert('Failed to delete: ' + (res.error || 'unknown'));
+            }
+          };
+
+          btns.appendChild(editBtn);
+          btns.appendChild(delBtn);
+
+          card.appendChild(title);
+          card.appendChild(tpl);
+          card.appendChild(days);
+          card.appendChild(profiles);
+          card.appendChild(btns);
+
+          grid.appendChild(card);
+        });
+
+      } catch (e) {
+        console.error('Failed to load schedules', e);
+        alert('Failed to load schedules: ' + e.message);
+      }
+    }
+
+    // Listen for schedule popup saves to refresh
+    ipcRenderer.on('schedule-saved', () => {
+      loadSchedules();
+    });
+
+    // When the add/edit popup is closed it could send a message to refresh
+    window.onload = loadSchedules;
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+[
+  {
+    "name": "temp",
+    "message": "hello",
+    "sendOption": "instant",
+    "afterDays": 0,
+    "is_delete": 0,
+    "created": "Fri Oct 10 2025 10:48:16 GMT+0530 (India Standard Time)",
+    "modified": "2025-10-10T09:08:13.584Z"
+  },
+  {
+    "name": "emo2",
+    "message": "hell",
+    "sendOption": "after",
+    "afterDays": 9,
+    "is_delete": 0,
+    "created": "Fri Oct 10 2025 14:35:35 GMT+0530 (India Standard Time)",
+    "modified": "2025-10-10T09:11:35.481Z"
+  }
+]

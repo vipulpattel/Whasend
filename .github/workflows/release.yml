@@ -1,0 +1,51 @@
+name: Build and Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    name: Build (Windows NSIS) and publish
+    runs-on: windows-latest
+    env:
+      # GH_TOKEN must be provided as a repository secret (personal access token with repo scope)
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      # Optional: Windows code signing certificate (PFX) as a base64-encoded artifact
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Clean old build artifacts
+        run: npm run clean || npx rimraf dist release || true
+
+      - name: Rebuild native modules (better-sqlite3)
+        run: npm run rebuild || true
+
+      - name: Build and publish (NSIS)
+        # Using --publish=always will upload artifacts to GitHub Releases using GH_TOKEN
+        run: npm run dist:nsis -- --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Upload build artifact (fallback)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-folder
+          path: dist/**

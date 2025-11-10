@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Add/Edit Template</title>
+  <style>
+    :root{ --bg:#f7fafc; --card:#ffffff; --muted:#6b7280; --accent:#2563eb; --danger:#dc2626; --success:#16a34a; --radius:10px }
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:var(--bg); margin:0; padding:20px; color:#0f172a}
+    .container{max-width:760px;margin:12px auto}
+    .card{background:var(--card);border-radius:var(--radius);padding:20px;border:1px solid #e6eef6;box-shadow:0 8px 20px rgba(2,6,23,0.08)}
+    h3#formTitle{margin:0 0 20px;font-size:24px;color:#1e293b}
+    label{display:block;font-weight:600;color:inherit;margin-bottom:8px;font-size:14px}
+    input[type=text], textarea, select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;background:#ffffff;margin-bottom:16px}
+    input[type=text]:focus, textarea:focus, select:focus{outline:2px solid rgba(37,99,235,0.12);border-color:#60a5fa}
+    .required{color:#0c0c0c}
+    .required::after{content:" *";color:#dc2626}
+    textarea{min-height:120px;resize:vertical}
+    .row{margin-bottom:16px}
+    .hint{font-size:12px;color:var(--muted);margin-top:4px}
+    
+    /* Media Upload Styles */
+    .media-upload-area{
+      border:2px dashed #cbd5e1;
+      border-radius:8px;
+      padding:40px 20px;
+      text-align:center;
+      margin-bottom:16px;
+      background:#f8fafc;
+      cursor:pointer;
+      transition:all 0.3s ease;
+    }
+    .media-upload-area:hover{
+      border-color:#60a5fa;
+      background:#eff6ff;
+    }
+    .media-upload-area.drag-over{
+      border-color:#2563eb;
+      background:#dbeafe;
+    }
+    .upload-icon{
+      font-size:48px;
+      color:#94a3b8;
+      margin-bottom:12px;
+    }
+    .upload-text{
+      color:#64748b;
+      font-size:14px;
+    }
+    .file-input{
+      display:none;
+    }
+    
+    /* Media Preview Styles */
+    .media-preview{
+      display:none;
+      border:1px solid #e2e8f0;
+      border-radius:8px;
+      padding:16px;
+      margin-bottom:16px;
+      background:#ffffff;
+    }
+    .preview-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:12px;
+    }
+    .preview-info{
+      font-size:14px;
+      color:#475569;
+    }
+    .preview-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .change-media, .remove-media{
+      color:white;
+      border:none;
+      padding:6px 12px;
+      border-radius:6px;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .change-media {
+      background: #3b82f6;
+    }
+    .change-media:hover {
+      background: #2563eb;
+    }
+    .remove-media{
+      background:var(--danger);
+    }
+    .remove-media:hover {
+      background: #dc2626;
+    }
+    .preview-content img{
+      max-width:100%;
+      max-height:200px;
+      border-radius:6px;
+    }
+    .preview-content video{
+      max-width:100%;
+      max-height:200px;
+      border-radius:6px;
+    }
+    
+    /* Button Styles */
+    #savebtn{
+      background:var(--accent);
+      color:#fff;
+      border:0;
+      padding:12px 24px;
+      border-radius:8px;
+      cursor:pointer;
+      font-weight:600;
+      font-size:16px;
+      width:100%;
+      margin-top:20px;
+    }
+    #savebtn:hover{
+      background:#1d4ed8;
+    }
+    #savebtn:disabled{
+      background:#94a3b8;
+      cursor:not-allowed;
+    }
+    
+    /* Loading Indicator */
+    .loading{
+      display:none;
+      text-align:center;
+      padding:20px;
+      color:var(--muted);
+    }
+    
+    /* Hidden/Show classes */
+    .hidden{
+      display:none !important;
+    }
+    .show{
+      display:block !important;
+    }
+    
+    @media (max-width:600px){ 
+      .container{padding:12px} 
+      .card{padding:16px} 
+      .media-upload-area{padding:24px 12px}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h3 id="formTitle">Add Template</h3>
+      
+      <div class="row">
+        <label class="required">Template Name</label>
+        <input type="text" id="templateName" placeholder="Enter a unique template name">
+        <div id="nameValidation" style="font-size:12px;margin-top:-12px;margin-bottom:8px;"></div>
+      </div>
+
+      <div class="row">
+        <label class="required">Template Type</label>
+        <select id="templateType">
+          <option value="Text">Text Only</option>
+          <option value="Media">Media (Image/Video/Audio/Document)</option>
+        </select>
+        <div class="hint">Choose whether this template will contain only text or include media files</div>
+      </div>
+
+      <div class="row" id="mediaSection" style="display:none;">
+        <label>Media File</label>
+        <div class="media-upload-area" id="uploadArea">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">
+            <strong>Click to upload</strong> or drag and drop<br>
+            <small>Images, Videos, Audio, Documents (Max 25MB)</small>
+          </div>
+        </div>
+        <input type="file" id="mediaFile" class="file-input" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt">
+        
+        <div class="media-preview" id="mediaPreview">
+          <div class="preview-header">
+            <div class="preview-info" id="previewInfo"></div>
+            <div class="preview-actions">
+              <button type="button" class="change-media" onclick="changeMedia()">Change</button>
+              <button type="button" class="remove-media" onclick="removeMedia()">Remove</button>
+            </div>
+          </div>
+          <div class="preview-content" id="previewContent"></div>
+        </div>
+      </div>
+      
+      <div class="row">
+        <label id="messageLabelText" class="required">Template Message</label>
+
+        <!-- Placeholder insertion controls -->
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+          <select id="placeholderSelect" style="max-width:260px;padding:10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;">
+            <option value="{{name}}">{{name}}</option>
+            <option value="{{phone}}">{{phone}}</option>
+            <option value="{{var1}}">{{var1}}</option>
+            <option value="{{var2}}">{{var2}}</option>
+            <option value="{{var3}}">{{var3}}</option>
+            <option value="{{var4}}">{{var4}}</option>
+            <option value="{{var5}}">{{var5}}</option>
+            <option value="{{var6}}">{{var6}}</option>
+          </select>
+          <button type="button" onclick="insertSelectedPlaceholder()" style="padding:10px 12px;border-radius:8px;border:0;background:#2563eb;color:#fff;cursor:pointer;">Insert</button>
+          <div style="font-size:12px;color:#64748b;">Click Insert to add the placeholder at cursor</div>
+        </div>
+
+        <textarea id="templateMsg" rows="5" placeholder="Enter your template message"></textarea>
+        <div class="hint">Use placeholders like {{name}}, {{phone}}, {{last_visited}} for personalization — you can also select and insert from the dropdown above.</div>
+      </div>
+      
+      <div class="row">
+        <button type="button" id="savebtn" onclick="saveTemplate()">Save Template</button>
+      </div>
+      
+      <div class="loading" id="loadingIndicator" style="display:none;">
+        <div>Uploading media file...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const { ipcRenderer } = require("electron");
+  // Broadcast channel to notify other renderer windows (no main process change needed)
+  let templatesChannel = null;
+  try { templatesChannel = new BroadcastChannel('whatsapp-multi-templates'); } catch (e) { templatesChannel = null; }
+  const urlParams = new URLSearchParams(window.location.search);
+    const templateName = urlParams.get("name");
+    let editing = false;
+    let existingTemplates = [];
+
+    // Load existing templates for validation
+    async function loadExistingTemplates() {
+      try {
+        existingTemplates = await ipcRenderer.invoke('get-templates');
+      } catch (err) {
+        console.error('Failed to fetch templates:', err);
+        existingTemplates = [];
+      }
+    }
+
+    // Validate template name in real-time
+    function validateTemplateName() {
+      if (editing) return; // Skip validation when editing existing template
+      
+      const nameInput = document.getElementById("templateName");
+      const validationDiv = document.getElementById("nameValidation");
+      const name = nameInput.value.trim();
+      
+      if (!name) {
+        validationDiv.innerHTML = "";
+        return;
+      }
+      
+      const exists = existingTemplates.some(t => 
+        t.name.toLowerCase() === name.toLowerCase() && !t.is_delete
+      );
+      
+      if (exists) {
+        validationDiv.innerHTML = '<span style="color:#dc2626;">❌ Template name already exists</span>';
+        nameInput.style.borderColor = '#dc2626';
+      } else {
+        validationDiv.innerHTML = '<span style="color:#16a34a;">✅ Template name is available</span>';
+        nameInput.style.borderColor = '#16a34a';
+      }
+    }
+
+    // Initialize
+    loadExistingTemplates().then(() => {
+      // Add real-time validation for template name
+      document.getElementById("templateName").addEventListener('input', validateTemplateName);
+    });
+
+    if (templateName) {
+      document.getElementById("formTitle").innerText = "Edit Template";
+      document.getElementById("savebtn").innerText = "Update";
+      ipcRenderer.send("get-template", templateName);
+    }
+
+    ipcRenderer.on("template-data", (event, template) => {
+      console.log('Loading template for editing:', template);
+      
+      // Set basic fields
+      document.getElementById("templateName").value = template.name;
+      document.getElementById("templateName").readOnly = true;
+      document.getElementById("templateMsg").value = template.message;
+      
+      // Set template type and make it editable when editing
+      const templateTypeSelect = document.getElementById("templateType");
+      templateTypeSelect.value = template.type || 'Text';
+      // Allow changing template type when editing
+      templateTypeSelect.disabled = false;
+      
+      // Show/hide media section based on type
+      const mediaSection = document.getElementById("mediaSection");
+      if (template.type === 'Media') {
+        mediaSection.style.display = "block";
+        
+        // If template has existing media, show preview
+        if (template.media_path && template.media_filename) {
+          displayExistingMedia(template.media_path, template.media_filename);
+        }
+      } else {
+        mediaSection.style.display = "none";
+      }
+      
+      // Update form title
+      document.getElementById("formTitle").textContent = "Edit Template";
+      
+      editing = true;
+    });
+    
+    // Function to display existing media when editing
+    function displayExistingMedia(mediaPath, mediaFilename) {
+      const previewSection = document.getElementById("mediaPreview");
+      const previewInfo = document.getElementById("previewInfo");
+      const previewContent = document.getElementById("previewContent");
+      
+      // Set current media file reference
+      uploadedMediaFile = {
+        path: mediaPath,
+        filename: mediaFilename,
+        isExisting: true
+      };
+      
+      // Show preview section
+      previewSection.style.display = "block";
+      
+      // Set preview info
+      previewInfo.textContent = `Current: ${mediaFilename}`;
+      
+      // Display preview based on file type
+      const extension = mediaFilename.split('.').pop().toLowerCase();
+      
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) {
+        previewContent.innerHTML = `<img src="${mediaPath}" alt="${mediaFilename}" style="max-width: 200px; max-height: 200px; border-radius: 6px;">`;
+      } else if (['mp4', 'avi', 'mov', 'wmv'].includes(extension)) {
+        previewContent.innerHTML = `
+          <video controls style="max-width: 200px; max-height: 200px; border-radius: 6px;">
+            <source src="${mediaPath}" type="video/${extension}">
+            Your browser does not support the video tag.
+          </video>
+        `;
+      } else if (['mp3', 'wav', 'ogg', 'm4a'].includes(extension)) {
+        previewContent.innerHTML = `
+          <div style="text-align: center; padding: 20px; background: #f3f4f6; border-radius: 6px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">🎵</div>
+            <audio controls style="width: 100%;">
+              <source src="${mediaPath}" type="audio/${extension}">
+              Your browser does not support the audio tag.
+            </audio>
+          </div>
+        `;
+      } else {
+        previewContent.innerHTML = `
+          <div style="text-align: center; padding: 20px; background: #f3f4f6; border-radius: 6px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">📎</div>
+            <p><strong>${mediaFilename}</strong></p>
+            <p style="color: #6b7280;">File preview not available</p>
+          </div>
+        `;
+      }
+    }
+    
+    // Send option UI and behavior temporarily disabled
+    /*
+    // Setup send option UI behavior
+    const optInstant = document.getElementById('optInstant');
+    const optAfter = document.getElementById('optAfter');
+    const afterLabel = document.getElementById('afterLabel');
+    const afterDays = document.getElementById('afterDays');
+
+    function updateAfterVisibility() {
+      if (optAfter.checked) {
+        afterLabel.style.display = '';
+      } else {
+        afterLabel.style.display = 'none';
+      }
+    }
+
+    optInstant.addEventListener('change', updateAfterVisibility);
+    optAfter.addEventListener('change', updateAfterVisibility);
+
+    // If editing an existing template, fill send option if present
+    ipcRenderer.on("template-data", (event, template) => {
+      if (template.sendOption === 'after' && template.afterDays) {
+        optAfter.checked = true;
+        afterDays.value = template.afterDays;
+      }
+      updateAfterVisibility();
+    });
+    */
+
+    // Load existing templates for duplicate checking
+    ipcRenderer.send("get-templates");
+    ipcRenderer.on("templates-list", (event, templates) => {
+      existingTemplates = templates || [];
+    });
+
+    // Template Type Change Handler
+    document.getElementById("templateType").addEventListener("change", function() {
+      const mediaSection = document.getElementById("mediaSection");
+      const messageLabel = document.getElementById("messageLabelText");
+      
+      if (this.value === "Media") {
+        mediaSection.style.display = "block";
+        // Make message optional for Media templates
+        messageLabel.className = ""; // Remove required class
+        messageLabel.textContent = "Template Message (Optional)";
+      } else {
+        mediaSection.style.display = "none";
+        // Make message required for Text templates
+        messageLabel.className = "required";
+        messageLabel.textContent = "Template Message";
+        removeMedia(); // Clear any uploaded media
+      }
+    });
+
+    // Media Upload Functionality
+    const uploadArea = document.getElementById("uploadArea");
+    const mediaFileInput = document.getElementById("mediaFile");
+    const mediaPreview = document.getElementById("mediaPreview");
+    const loadingIndicator = document.getElementById("loadingIndicator");
+
+    // Click to upload
+    uploadArea.addEventListener("click", async () => {
+      try {
+        const result = await ipcRenderer.invoke('select-media-file');
+        if (result.success && !result.canceled) {
+          // Process the selected file
+          const file = result.file;
+          
+          // Show loading indicator
+          loadingIndicator.style.display = "block";
+          uploadArea.style.display = "none";
+          
+          // Upload the file
+          const uploadResult = await ipcRenderer.invoke('upload-media-file', file);
+          
+          if (uploadResult.success) {
+            uploadedMediaFile = {
+              name: uploadResult.fileName,
+              path: uploadResult.filePath,
+              type: getMediaType(file.name),
+              size: file.size
+            };
+            
+            displayMediaPreview(uploadedMediaFile);
+          } else {
+            throw new Error(uploadResult.error || 'Upload failed');
+          }
+        }
+      } catch (error) {
+        console.error('Media selection error:', error);
+        alert('❌ Error selecting media file: ' + error.message);
+      } finally {
+        loadingIndicator.style.display = "none";
+      }
+    });
+
+    // Drag and drop functionality
+    uploadArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadArea.classList.add("drag-over");
+    });
+
+    uploadArea.addEventListener("dragleave", () => {
+      uploadArea.classList.remove("drag-over");
+    });
+
+    uploadArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove("drag-over");
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        handleFileUpload(files[0]);
+      }
+    });
+
+    // File input change
+    mediaFileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) {
+        handleFileUpload(e.target.files[0]);
+      }
+    });
+
+    async function handleFileUpload(file) {
+      // Validate file size (25MB max)
+      const maxSize = 25 * 1024 * 1024;
+      if (file.size > maxSize) {
+        alert("❌ File size must be less than 25MB");
+        return;
+      }
+
+      try {
+        loadingIndicator.style.display = "block";
+        uploadArea.style.display = "none";
+        
+        // Convert file to base64
+        const fileData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = reader.result.split(',')[1]; // Remove data:type;base64, prefix
+            resolve({
+              name: file.name,
+              data: base64,
+              size: file.size,
+              type: file.type
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        // Upload file to backend
+        const result = await ipcRenderer.invoke('upload-media-file', fileData);
+        
+        if (result.success) {
+          uploadedMediaFile = {
+            filePath: result.filePath,
+            fileName: result.fileName,
+            originalName: result.originalName
+          };
+          
+          // Show preview
+          await showMediaPreview(result.filePath, result.originalName, file.size);
+          
+        } else {
+          throw new Error(result.error);
+        }
+        
+      } catch (error) {
+        console.error('Upload error:', error);
+        alert(`❌ Upload failed: ${error.message}`);
+        uploadArea.style.display = "block";
+      } finally {
+        loadingIndicator.style.display = "none";
+      }
+    }
+
+    async function showMediaPreview(filePath, fileName, fileSize) {
+      try {
+        const previewResult = await ipcRenderer.invoke('get-media-preview', filePath);
+        
+        if (previewResult.success) {
+          const previewInfo = document.getElementById("previewInfo");
+          const previewContent = document.getElementById("previewContent");
+          
+          // Show file info
+          const sizeStr = fileSize > 1024 * 1024 ? 
+            `${(fileSize / (1024 * 1024)).toFixed(1)}MB` : 
+            `${(fileSize / 1024).toFixed(1)}KB`;
+          
+          previewInfo.innerHTML = `
+            <strong>${fileName}</strong><br>
+            <small>${previewResult.mediaType.toUpperCase()} • ${sizeStr}</small>
+          `;
+          
+          // Show preview content
+          previewContent.innerHTML = "";
+          if (previewResult.mediaType === 'image' && previewResult.previewData) {
+            previewContent.innerHTML = `<img src="${previewResult.previewData}" alt="Preview">`;
+          } else if (previewResult.mediaType === 'video') {
+            previewContent.innerHTML = `<video controls><source src="${filePath}" type="${previewResult.fileType}"></video>`;
+          } else if (previewResult.mediaType === 'audio') {
+            previewContent.innerHTML = `<audio controls><source src="${filePath}" type="${previewResult.fileType}"></audio>`;
+          } else {
+            previewContent.innerHTML = `<div style="padding:20px;text-align:center;color:#64748b;">📄 ${fileName}</div>`;
+          }
+          
+          mediaPreview.style.display = "block";
+        }
+        
+      } catch (error) {
+        console.error('Preview error:', error);
+      }
+    }
+
+    function removeMedia() {
+      uploadedMediaFile = null;
+      mediaPreview.style.display = "none";
+      uploadArea.style.display = "block";
+      mediaFileInput.value = "";
+    }
+    
+    function getMediaType(fileName) {
+      const extension = fileName.toLowerCase().split('.').pop();
+      
+      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+      const videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'];
+      const audioExtensions = ['mp3', 'wav', 'ogg', 'aac', 'flac'];
+      const documentExtensions = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'xls', 'xlsx', 'ppt', 'pptx'];
+      
+      if (imageExtensions.includes(extension)) {
+        return 'image';
+      } else if (videoExtensions.includes(extension)) {
+        return 'video';
+      } else if (audioExtensions.includes(extension)) {
+        return 'audio';
+      } else if (documentExtensions.includes(extension)) {
+        return 'document';
+      } else {
+        return 'file';
+      }
+    }
+    
+    function displayMediaPreview(mediaFile) {
+      const mediaPreview = document.getElementById("mediaPreview");
+      const previewContent = document.querySelector(".preview-content");
+      const previewInfo = document.querySelector(".preview-info");
+      const uploadArea = document.getElementById("uploadArea");
+      
+      try {
+        // Hide upload area and show preview
+        uploadArea.style.display = "none";
+        
+        // Show file info
+        const fileSize = mediaFile.size || 0;
+        const sizeStr = fileSize > 1024 * 1024 ? 
+          `${(fileSize / (1024 * 1024)).toFixed(1)}MB` : 
+          `${(fileSize / 1024).toFixed(1)}KB`;
+        
+        previewInfo.innerHTML = `
+          <strong>${mediaFile.name}</strong><br>
+          <small>${mediaFile.type.toUpperCase()} • ${sizeStr}</small>
+        `;
+        
+        // Show preview content based on type
+        previewContent.innerHTML = "";
+        if (mediaFile.type === 'image') {
+          previewContent.innerHTML = `<img src="${mediaFile.path}" alt="Preview" style="max-width:100%;max-height:200px;">`;
+        } else if (mediaFile.type === 'video') {
+          previewContent.innerHTML = `<video controls style="max-width:100%;max-height:200px;"><source src="${mediaFile.path}"></video>`;
+        } else if (mediaFile.type === 'audio') {
+          previewContent.innerHTML = `<audio controls><source src="${mediaFile.path}"></audio>`;
+        } else {
+          previewContent.innerHTML = `<div style="padding:20px;text-align:center;color:#64748b;">📄 ${mediaFile.name}</div>`;
+        }
+        
+        mediaPreview.style.display = "block";
+        
+      } catch (error) {
+        console.error('Display preview error:', error);
+        alert('❌ Error displaying media preview: ' + error.message);
+      }
+    }
+    
+    async function changeMedia() {
+      try {
+        const result = await ipcRenderer.invoke('select-media-file');
+        if (result.success && !result.canceled) {
+          // Process the selected file
+          const file = result.file;
+          
+          // Show loading indicator
+          loadingIndicator.style.display = "block";
+          mediaPreview.style.display = "none";
+          
+          // Upload the file
+          const uploadResult = await ipcRenderer.invoke('upload-media-file', file);
+          
+          if (uploadResult.success) {
+            uploadedMediaFile = {
+              name: uploadResult.fileName,
+              path: uploadResult.filePath,
+              type: getMediaType(file.name),
+              size: file.size
+            };
+            
+            displayMediaPreview(uploadedMediaFile);
+          } else {
+            throw new Error(uploadResult.error || 'Upload failed');
+          }
+        }
+      } catch (error) {
+        console.error('Media change error:', error);
+        alert('❌ Error changing media file: ' + error.message);
+      } finally {
+        loadingIndicator.style.display = "none";
+      }
+    }
+
+    async function saveTemplate() {
+      const name = document.getElementById("templateName").value.trim();
+      const message = document.getElementById("templateMsg").value.trim();
+      const type = document.getElementById("templateType").value;
+      
+      // Client-side validation
+      if (!name) {
+        alert("❌ Template name cannot be empty");
+        document.getElementById("templateName").focus();
+        return;
+      }
+      
+      // Message is optional for Media templates, required for Text templates
+      if (type === "Text" && !message) {
+        alert("❌ Template message cannot be empty for Text templates");
+        document.getElementById("templateMsg").focus();
+        return;
+      }
+
+      if (type === "Media") {
+        // For new templates, require media upload
+        if (!editing && !uploadedMediaFile) {
+          alert("❌ Please upload a media file for Media type templates");
+          return;
+        }
+        
+        // For editing templates, media is optional (user can keep existing media)
+        // uploadedMediaFile will be set if user uploads new media or if existing media was loaded
+      }
+      
+      // Check for duplicates when adding new template
+      if (!editing) {
+        const exists = existingTemplates.some(t => 
+          t.name.toLowerCase() === name.toLowerCase() && !t.is_delete
+        );
+        
+        if (exists) {
+          alert(`❌ Template name "${name}" already exists. Please choose a different name.`);
+          document.getElementById("templateName").focus();
+          return;
+        }
+      }
+      
+      try {
+        document.getElementById("savebtn").disabled = true;
+        document.getElementById("savebtn").textContent = "Saving...";
+        
+        // Prepare template data
+        const templateData = {
+          name: name,
+          type: type,
+          message: message,
+          sendOption: 'instant',
+          afterDays: 0,
+          editing: editing
+        };
+        
+        // Handle media data
+        if (type === "Media") {
+          if (uploadedMediaFile) {
+            console.log('uploadedMediaFile:', uploadedMediaFile);
+            // New media uploaded or existing media loaded
+            if (uploadedMediaFile.isExisting) {
+              // Keep existing media
+              templateData.media_path = uploadedMediaFile.path;
+              templateData.media_filename = uploadedMediaFile.filename;
+            } else {
+              // New media uploaded
+              templateData.media_path = uploadedMediaFile.path;
+              templateData.media_filename = uploadedMediaFile.name;
+            }
+          } else {
+            console.log('No uploadedMediaFile found for Media type template');
+          }
+        } else {
+          // Text template - clear any media references
+          templateData.media_path = null;
+          templateData.media_filename = null;
+        }
+        
+        console.log('Template data being saved:', templateData);
+        
+        // Save template with media support
+        const result = await ipcRenderer.invoke('save-template-with-media', templateData);
+        
+        if (result.success) {
+          alert(`✅ Template "${name}" saved successfully!`);
+          
+          // Notify other renderers to refresh their template lists
+          try { 
+            if (templatesChannel) templatesChannel.postMessage({ type: 'template-saved', name }); 
+          } catch (e) {}
+          
+          // Close this popup window
+          try { window.close(); } catch (e) { console.error('Failed to close window:', e); }
+        } else {
+          throw new Error(result.error);
+        }
+        
+      } catch (error) {
+        console.error('Save error:', error);
+        alert(`❌ Error saving template: ${error.message}`);
+      } finally {
+        document.getElementById("savebtn").disabled = false;
+        document.getElementById("savebtn").textContent = "Save Template";
+      }
+    }
+
+    // Legacy IPC handlers (for backward compatibility)
+    // Helper: insert text at the cursor/caret position of a textarea (works for selection replacement too)
+    function insertAtCursor(textarea, text) {
+      try {
+        textarea.focus();
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value;
+        textarea.value = value.substring(0, start) + text + value.substring(end);
+        // Place caret just after inserted text
+        const caretPos = start + text.length;
+        textarea.selectionStart = textarea.selectionEnd = caretPos;
+        // Trigger input event so any listeners update
+        const evt = new Event('input', { bubbles: true });
+        textarea.dispatchEvent(evt);
+      } catch (e) {
+        console.error('insertAtCursor error', e);
+      }
+    }
+
+    function insertSelectedPlaceholder() {
+      const sel = document.getElementById('placeholderSelect');
+      const placeholder = sel ? sel.value : null;
+      const ta = document.getElementById('templateMsg');
+      if (!placeholder || !ta) return;
+      insertAtCursor(ta, placeholder);
+    }
+
+    // Also allow double-click on the select to insert quickly
+    try { document.getElementById('placeholderSelect').addEventListener('dblclick', insertSelectedPlaceholder); } catch(e){}
+
+    ipcRenderer.on("template-success", (event, name) => {
+      alert(`Template "${name}" saved successfully.`);
+      try { if (templatesChannel) templatesChannel.postMessage({ type: 'template-saved', name }); } catch (e) {}
+      try { window.close(); } catch (e) { console.error('Failed to close window:', e); }
+    });
+
+    ipcRenderer.on("template-error", (event, errorMessage) => {
+      alert(`❌ Error: ${errorMessage}`);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Settings</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f6f8fa; margin: 0; }
+    .container { max-width: 480px; margin: 40px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 32px; }
+    h2 { margin-top: 0; }
+    .settings label { display: block; margin: 16px 0 4px; font-weight: 500; }
+    .settings input[type="number"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd; margin-bottom: 8px; }
+    .settings input[type="checkbox"] { margin-right: 8px; }
+    #saveSettings { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 16px; cursor: pointer; margin-top: 16px; }
+    #saveSettings:hover { background: #1e63d8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Settings</h2>
+    <div class="settings">
+      <label>Global rate (messages / minute)</label>
+      <input id="rateLimitPerMinute" type="number" />
+      <label>Per-profile rate (messages / minute)</label>
+      <input id="perProfileLimitPerMinute" type="number" />
+      <label>Max consecutive failures before pause</label>
+      <input id="maxConsecutiveFailuresBeforePause" type="number" />
+      <label>Min wait period between messages (days)</label>
+      <input id="minWaitPeriodDays" type="number" min="1" placeholder="e.g., 7" />
+      <label>Max messages per profile per day</label>
+      <input id="maxPerProfilePerDay" type="number" min="1" placeholder="e.g., 50" />
+      <label style="display:none;">Dry run (no sends)</label>
+      <input id="dryRun" type="checkbox" style="display:none;" />
+      <button id="saveSettings">Save</button>
+    </div>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    async function loadSettingsToUI() {
+      const s = await ipcRenderer.invoke('get-settings');
+      if (!s) return;
+      document.getElementById('rateLimitPerMinute').value = s.rateLimitPerMinute || '';
+      document.getElementById('perProfileLimitPerMinute').value = s.perProfileLimitPerMinute || '';
+      document.getElementById('maxConsecutiveFailuresBeforePause').value = s.maxConsecutiveFailuresBeforePause || '';
+      document.getElementById('minWaitPeriodDays').value = s.minWaitPeriodDays || '';
+      document.getElementById('maxPerProfilePerDay').value = s.maxPerProfilePerDay || '';
+      document.getElementById('dryRun').checked = !!s.dryRun;
+    }
+    document.getElementById('saveSettings').addEventListener('click', async () => {
+      const maxPerProfilePerDayValue = Number(document.getElementById('maxPerProfilePerDay').value);
+      const settings = {
+        rateLimitPerMinute: Number(document.getElementById('rateLimitPerMinute').value),
+        perProfileLimitPerMinute: Number(document.getElementById('perProfileLimitPerMinute').value),
+        maxConsecutiveFailuresBeforePause: Number(document.getElementById('maxConsecutiveFailuresBeforePause').value),
+        minWaitPeriodDays: Number(document.getElementById('minWaitPeriodDays').value),
+        maxPerProfilePerDay: maxPerProfilePerDayValue,
+        defaultMessageLimitPerProfile: maxPerProfilePerDayValue,
+        dryRun: document.getElementById('dryRun').checked
+      };
+      const res = await ipcRenderer.invoke('save-settings', settings);
+      if (res && res.success) alert('Settings saved');
+    });
+    loadSettingsToUI();
+  </script>
+</body>
+</html>

@@ -1,0 +1,2333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Customers Management</title>
+  <link
+    href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
+    rel="stylesheet"
+  />
+  <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #controls { margin-bottom: 20px; }
+    .dialog-bg {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.45); justify-content: center; align-items: center;
+      z-index: 12000; /* ensure modals appear above other UI */
+      pointer-events: auto;
+    }
+    .dialog {
+      background: #fff; padding: 20px; border-radius: 8px; width: 350px;
+    }
+    .dialog input, .dialog select, .dialogdnD input, .dialogdnD select, input[type="date"], select {
+      width: 100%;
+      padding: 8px;
+      margin: 6px 0;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      box-sizing: border-box;
+      font-size: 13px;
+      outline: none;
+    }
+    .dialog button { margin-right: 10px; }
+
+    .dialogdnD-bg {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.45); justify-content: center; align-items: center;
+      z-index: 12000;
+    }
+    .dialogdnD {
+      background: #fff; padding: 20px; border-radius: 8px; width: 350px;
+    }
+    .dialogdnD input { width: 95%; padding: 8px; margin: 6px 0; }
+    .dialogdnD button { margin-right: 10px; }
+    /* Toast notification */
+    #toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      min-width: 200px;
+      max-width: 320px;
+      padding: 12px 16px;
+      border-radius: 6px;
+      color: #fff;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 9999;
+      font-weight: 600;
+    }
+    /* Generic button style used across the page */
+    .btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1; /* default border for most buttons */
+      background: #ffffff;
+      cursor: pointer;
+      font-weight: 700;
+      color: #0f172a;
+      box-shadow: 0 2px 6px rgba(15,23,42,0.06);
+      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+      user-select: none;
+      box-sizing: border-box;
+      font-size: 14px;
+      line-height: 18px;
+      min-height: 36px;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15,23,42,0.12); }
+    .btn:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(15,23,42,0.06); }
+    .btn:focus { outline: 3px solid rgba(37,99,235,0.16); outline-offset: 2px; }
+    .btn.primary { background:#2563eb; color:#fff; border-color:transparent; }
+    .btn.primary:hover { background:#1e63d8 }
+
+    /* Dialog visual improvements */
+    .dialog { background: #fff; padding: 20px; border-radius: 8px; width: 100%; max-width: 480px; box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+    /* small action buttons inside grid rows */
+    .assign-btn, .dnd-btn {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db; /* standard small-action button border */
+      background: #ffffff;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+      transition: background-color 120ms ease, transform 100ms ease;
+    }
+    .assign-btn:hover, .dnd-btn:hover { transform: translateY(-1px); }
+    .assign-btn { background: #f8fafc; }
+    .dnd-btn { background: #fff7ed; }
+    .assign-btn:active, .dnd-btn:active { transform: translateY(0); }
+  /* Ensure selects render above overlays when native dropdowns open (helps in some browsers) */
+  select { position: relative; z-index: 13000; }
+
+  /* Tighten toolbar and search area so buttons appear adjacent to the search box */
+  .gridjs-search { display: flex; gap: 10px; align-items: center; }
+  .gridjs-search input { flex: 1 1 220px; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+  #tableToolbar { margin: 0; }
+  /* Bold gray border only for the two toolbar buttons */
+  #tableToolbar .btn { padding: 8px 12px; border-radius: 8px; font-size: 14px; min-height: 36px; box-shadow: 0 2px 6px rgba(15,23,42,0.06); border: 1px solid #94a3b8; }
+  /* ensure dialog content accepts pointer events and can't be blocked by underlying elements */
+  .dialog, .dialog * { pointer-events: auto; }
+    #toast.success { background: #2d9a4a; }
+    #toast.error { background: #d9534f; }
+    #toast.info { background: #2f86d6; }
+
+    /* Excel Import Wizard Styles */
+    .wizard-content { display: none; }
+    .wizard-content.active { display: block; }
+    .step.completed { color: #28a745 !important; }
+    .step.completed .step-number { border-color: #28a745 !important; background: #28a745 !important; color: #fff !important; }
+    .step.active { color: #2563eb !important; }
+    .step.active .step-number { border-color: #2563eb !important; color: #2563eb !important; }
+    .step:not(:last-child):after { content: ''; position: absolute; left: 100%; top: 50%; width: 50px; height: 2px; background: #ddd; transform: translateY(-50%); z-index: -1; }
+    .step.completed:not(:last-child):after { background: #28a745; }
+    .file-drop-zone:hover { border-color: #0066cc !important; background: #f0f7ff !important; color: #0066cc !important; }
+    .file-drop-zone.dragover { border-color: #0066cc !important; background: #e6f0ff !important; color: #0066cc !important; transform: scale(1.02); }
+    .file-info { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e6e9ee; border-radius: 8px; margin-top: 12px; }
+    .file-info-icon { font-size: 24px; }
+    .file-info-details { flex: 1; }
+    .file-info-name { font-weight: 500; }
+    .file-info-size { font-size: 12px; color: var(--muted, #6b7280); }
+    .excel-table { width: 100%; border-collapse: collapse; }
+    .excel-table th, .excel-table td { border: 1px solid #e6e9ee; padding: 8px; text-align: left; font-size: 13px; }
+    .excel-table th { background: #f8f9fa; font-weight: 600; position: sticky; top: 0; }
+    .excel-table tr:nth-child(even) { background: #f8f9fa; }
+    .mapping-row { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e6e9ee; border-radius: 6px; background: #f8f9fa; }
+    .mapping-arrow { font-size: 18px; color: #666; }
+    .mapping-select { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    .validation-item { display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+    .validation-success { background: #d4edda; color: #155724; }
+    .validation-warning { background: #fff3cd; color: #856404; }
+    .validation-error { background: #f8d7da; color: #721c24; }
+    
+    /* Loading Spinner Overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 20000;
+    }
+    .loading-spinner {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #2563eb;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .loading-text {
+      font-size: 16px;
+      color: #333;
+      font-weight: 500;
+    }
+    .loading-progress {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2 style="margin: 0;">Customers Management</h2>
+    <button id="downloadSampleBtn" class="btn" style="display:flex;align-items:center;gap:6px;">
+      <span>📥</span>
+      <span>Download Sample</span>
+    </button>
+  </div>
+
+  <div id="controls">
+    <button class="btn primary" onclick="openDialog()">➕ Add Customer</button>
+    <button class="btn" onclick="openPatientImportWizard()">📤 Import Customer</button>
+    <button class="btn" onclick="exportPatients()">⬇ Export</button>
+    <button class="btn" onclick="openDND()">⛔ DND</button>
+    <button class="btn" onclick="openDNDImportDialog()">📤 Import DND</button>
+    <button class="btn" onclick="loadPatients()">🔄 Refresh</button>
+    <button class="btn" onclick="showSyncReport()">📊 Sync Report</button>
+    <button class="btn" onclick="deleteAllRecords()" style="background:#dc3545; color:white; border:2px solid #b02a37;">🗑️ Delete All</button>
+  </div>
+
+  <!-- Selection Actions (Hidden by default) -->
+  <div id="selectionActions" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border-radius:6px; border-left:4px solid #007bff;">
+    <span id="selectedCount" style="font-weight:bold; margin-right:15px;">0 customers selected</span>
+    <button class="btn" onclick="deleteSelectedCustomers()" style="background:#dc3545; color:white; margin-right:10px;">🗑️ Delete Selected</button>
+    <button class="btn" onclick="clearSelection()" style="background:#6c757d; color:white; margin-right:10px;">❌ Clear Selection</button>
+    <button class="btn" onclick="selectAll()" style="margin-right:10px;">☑️ Select All</button>
+  </div>
+
+  <!-- Default profile picker trigger -->
+  <!-- Toolbar placed above the table (keeps buttons inline, near grid search) -->
+  <div id="tableToolbar" style="display:flex; justify-content:flex-end; gap:10px; align-items:center; margin-top:8px;">
+    <button id="setDefaultProfileBtn" class="btn" onclick="openDefaultProfilePicker()">Add Default Profile</button>
+    <button id="openUpdateProfileBtn" class="btn" onclick="openUpdateProfileDialog()">Update Profile</button>
+  </div>
+
+  <div style="margin-top:12px">
+    <button id="tabActive" class="btn" onclick="setTab(0)">Active</button>
+    <button id="tabDnd" class="btn" onclick="setTab(1)">DND</button>
+  </div>
+
+  <div id="toolbarPlaceholder" style="display:flex; justify-content:flex-end; margin-top:8px"></div>
+  <div id="patientsTable" style="margin-top:12px"></div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="info"></div>
+
+  <!-- Add Patient Dialog -->
+  <div class="dialog-bg" id="dialogBg">
+    <div class="dialog">
+      <h3>Add Customer</h3>
+      <input id="uniqueId" placeholder="Unique ID" />
+      <input id="name" placeholder="Name" />
+      <input id="phone" placeholder="Phone" />
+      <!-- <label for="profileSelect" style="display:block; margin-top:6px; font-weight:600;">Profile</label> -->
+      <select id="profileSelect" style="width:100%; padding:8px; margin-bottom:6px">
+        <option value="">(none)</option>
+      </select>
+      <input type="date" id="lastVisited" />
+      <br />
+  <button class="btn primary" onclick="savePatient()">Save</button>
+  <button class="btn" onclick="closeDialog()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Add dnD Dialog -->
+  <div class="dialogdnD-bg" id="dialogdnDBg">
+    <div class="dialogdnD">
+      <h3>Add DND</h3>
+      <input id="dndphone" placeholder="Phone" />
+      <br />
+  <button class="btn primary" onclick="updateDND()">Update</button>
+  <button class="btn" onclick="closeDNDDialog()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Import Patients Dialog -->
+<div class="dialog-bg" id="importPatientsDialog">
+  <div class="dialog">
+    <h3>Import Customers Excel</h3>
+    <input type="file" id="importPatientsFile" accept=".xlsx,.xls" />
+    <br />
+  <button class="btn primary" onclick="handleImportPatients()">Import</button>
+  <button class="btn" onclick="closeImportPatientsDialog()">Cancel</button>
+  </div>
+</div>
+
+<!-- Import DND Dialog -->
+<div class="dialog-bg" id="importDndDialog">
+  <div class="dialog">
+    <h3>Import DND Excel</h3>
+    <input type="file" id="importDndFile" accept=".xlsx,.xls" />
+    <br />
+  <button class="btn primary" onclick="handleImportDnd()">Import</button>
+  <button class="btn" onclick="closeImportDndDialog()">Cancel</button>
+  </div>
+</div>
+
+<!-- Assign Profile Dialog -->
+<div class="dialog-bg" id="assignProfileDialog" style="display:none">
+  <div class="dialog">
+    <h3>Assign Profile</h3>
+    <input type="hidden" id="assignUniqueId" />
+    <input type="hidden" id="assignPhone" />
+    <label style="display:block; margin-bottom:6px">Select Profile</label>
+    <select id="assignProfileSelect" style="width:100%; padding:8px; margin-bottom:12px">
+      <option value="">(none)</option>
+    </select>
+    <div style="text-align:right">
+  <button class="btn primary" onclick="saveAssignProfile()">Save</button>
+  <button class="btn" onclick="closeAssignProfileDialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Default Profile Picker Panel -->
+<div class="dialog-bg" id="defaultProfilePickerBg" style="display:none; align-items:flex-start; justify-content:flex-end">
+  <div class="dialog" style="width:320px; margin:40px;">
+    <h3>Set Default Profile</h3>
+    <label style="display:block; margin-bottom:6px">Select Profile to assign</label>
+    <select id="defaultProfileSelect" style="width:100%; padding:8px; margin-bottom:12px">
+      <option value="">(select)</option>
+    </select>
+    <div style="text-align:right">
+  <button class="btn" onclick="closeDefaultProfilePicker()">Cancel</button>
+  <button class="btn primary" onclick="applyDefaultProfile()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Update Profile Dialog -->
+<div class="dialog-bg" id="updateProfileDialogBg" style="display:none; align-items:center; justify-content:center">
+  <div class="dialog" style="width:360px;">
+    <h3>Update Profile</h3>
+    <label style="display:block; margin-bottom:6px">Select existing profile to replace</label>
+    <select id="fromProfileSelect" style="width:100%; padding:8px; margin-bottom:8px">
+      <option value="">(select existing profile)</option>
+    </select>
+    <label style="display:block; margin-bottom:6px">Select target profile</label>
+    <select id="toProfileSelect" style="width:100%; padding:8px; margin-bottom:12px">
+      <option value="">(select)</option>
+    </select>
+    <div style="text-align:right">
+  <button class="btn" onclick="closeUpdateProfileDialog()">Cancel</button>
+  <button class="btn primary" onclick="applyUpdateProfile()">Update Profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sync Report Dialog -->
+<div class="dialog-bg" id="syncReportDialog" style="display:none; align-items:center; justify-content:center">
+  <div class="dialog" style="width:90%; max-width:800px; max-height:80vh; overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+      <h3>Sync Report</h3>
+      <button class="btn" onclick="closeSyncReportDialog()">✕ Close</button>
+    </div>
+    
+    <div id="syncReportSummary" style="background:#f8fafc; padding:12px; border-radius:6px; margin-bottom:15px;">
+      <!-- Summary will be populated by JavaScript -->
+    </div>
+    
+    <!-- Filter Buttons for New/Existing Patients -->
+    <div style="margin-bottom:12px;">
+      <button id="syncTabAll" class="btn" onclick="setSyncTab('all')" style="font-weight:bold;">All Customers</button>
+      <button id="syncTabNew" class="btn" onclick="setSyncTab('new')">New Customers</button>
+      <button id="syncTabExisting" class="btn" onclick="setSyncTab('existing')">Existing Customers</button>
+    </div>
+    
+    <div style="overflow-y:auto; max-height:400px; border:1px solid #e2e8f0; border-radius:6px;">
+      <div id="syncReportTable">
+        <!-- Table will be populated by JavaScript -->
+      </div>
+    </div>
+    
+    <div style="text-align:right; margin-top:15px;">
+      <button class="btn" onclick="exportSyncReport()">⬇ Export Report</button>
+      <button class="btn primary" onclick="closeSyncReportDialog()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Patient Import Wizard Modal -->
+<div class="dialog-bg" id="patientImportWizard" style="display:none; align-items:center; justify-content:center">
+  <div class="dialog" style="width:85%; max-width:900px; max-height:75vh; overflow:hidden; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+      <h3>📊 Import Customers from Excel</h3>
+      <button class="btn" onclick="closePatientImportWizard()">✕ Close</button>
+    </div>
+    
+    <!-- Wizard Steps -->
+    <div class="wizard-steps" style="display:flex; justify-content:space-between; padding:15px 0; border-bottom:1px solid #e6e9ee; margin-bottom:20px;">
+      <div class="step active" data-step="1" style="display:flex; align-items:center; gap:8px; color:#2563eb; font-size:14px; position:relative;">
+        <div class="step-number" style="width:32px; height:32px; border-radius:50%; border:2px solid #2563eb; display:flex; align-items:center; justify-content:center; font-weight:600; background:#fff; color:#2563eb;">1</div>
+        <div class="step-label">Upload Excel File</div>
+      </div>
+      <div class="step" data-step="2" style="display:flex; align-items:center; gap:8px; color:#999; font-size:14px; position:relative;">
+        <div class="step-number" style="width:32px; height:32px; border-radius:50%; border:2px solid #ddd; display:flex; align-items:center; justify-content:center; font-weight:600; background:#fff;">2</div>
+        <div class="step-label">Select Header Row</div>
+      </div>
+      <div class="step" data-step="3" style="display:flex; align-items:center; gap:8px; color:#999; font-size:14px; position:relative;">
+        <div class="step-number" style="width:32px; height:32px; border-radius:50%; border:2px solid #ddd; display:flex; align-items:center; justify-content:center; font-weight:600; background:#fff;">3</div>
+        <div class="step-label">Match Columns</div>
+      </div>
+      <div class="step" data-step="4" style="display:flex; align-items:center; gap:8px; color:#999; font-size:14px; position:relative;">
+        <div class="step-number" style="width:32px; height:32px; border-radius:50%; border:2px solid #ddd; display:flex; align-items:center; justify-content:center; font-weight:600; background:#fff;">4</div>
+        <div class="step-label">Import Customers</div>
+      </div>
+    </div>
+
+    <div style="overflow-y:auto; flex:1; max-height:calc(75vh - 160px);">
+      <!-- Step 1: Upload Excel -->
+      <div id="patientWizardStep1" class="wizard-content active">
+        <div style="text-align:center; margin-bottom:16px;">
+          <h4 style="margin:0 0 12px 0; color:#333; font-size:18px;">Upload Customer Data</h4>
+          <p style="color:#666; margin-bottom:20px;">Upload an Excel or CSV file containing customer information</p>
+        </div>
+        
+        <div class="file-drop-zone" id="patientFileDropZone" style="border:3px dashed #ddd; border-radius:12px; padding:30px 20px; text-align:center; cursor:pointer; transition:all 0.3s; background:#fafbfc; min-height:160px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:16px; color:#666;">
+          <div style="font-size:40px; margin-bottom:10px; opacity:0.7;">📊</div>
+          <div style="font-size:16px; margin-bottom:8px; font-weight:600; color:#333;">Upload Excel File</div>
+          <div style="font-size:13px; margin-bottom:12px; color:#666;">Drag and drop your Excel or CSV file here, or click to browse</div>
+          <button type="button" class="btn primary" style="margin-top:4px; font-size:13px; padding:8px 16px;">Select File</button>
+          <div style="margin-top:16px; color:#999; font-size:13px;">Supported formats: .xlsx, .xls, .csv</div>
+          <input type="file" id="patientHiddenInput" accept=".xlsx,.xls,.csv" style="display:none;">
+        </div>
+        <div id="patientSelectedFileInfo" style="display:none; margin-top:15px;"></div>
+      </div>
+
+      <!-- Step 2: Select Header Row -->
+      <div id="patientWizardStep2" class="wizard-content" style="display:none;">
+        <div style="margin-bottom:16px;">
+          <h4 style="margin:0 0 12px 0; color:#333; font-size:18px;">Select Header Row</h4>
+          <p style="color:#666; margin-bottom:20px;">Please select which row contains the column headers:</p>
+          <div style="margin-bottom:20px;">
+            <label style="display:block; margin-bottom:8px; font-weight:500;">Header Row Number:</label>
+            <select id="patientHeaderRowSelect" style="padding:8px 12px; border:1px solid #ddd; border-radius:6px;">
+              <option value="1">Row 1</option>
+              <option value="2">Row 2</option>
+              <option value="3">Row 3</option>
+              <option value="4">Row 4</option>
+              <option value="5">Row 5</option>
+            </select>
+          </div>
+        </div>
+        <div id="patientExcelPreview" style="border:1px solid #e6e9ee; border-radius:8px; max-height:220px; overflow:auto; background:#fff;"></div>
+      </div>
+
+      <!-- Step 3: Match Columns -->
+      <div id="patientWizardStep3" class="wizard-content" style="display:none;">
+        <div style="margin-bottom:16px;">
+          <h4 style="margin:0 0 12px 0; color:#333; font-size:18px;">Match Columns</h4>
+          <p style="color:#666; margin-bottom:20px;">Map your Excel columns to customer fields:</p>
+          <div id="patientColumnMapping" style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;"></div>
+        </div>
+        <div id="patientMappingPreview" style="border:1px solid #e6e9ee; border-radius:8px; max-height:200px; overflow:auto; background:#fff;"></div>
+      </div>
+
+      <!-- Step 4: Import -->
+      <div id="patientWizardStep4" class="wizard-content" style="display:none;">
+        <div style="margin-bottom:16px;">
+          <h4 style="margin:0 0 12px 0; color:#333; font-size:18px;">Import Customers</h4>
+          <p style="color:#666; margin-bottom:20px;">Review your data and complete the import:</p>
+          <div id="patientValidationResults" style="margin-bottom:20px;"></div>
+        </div>
+        <div id="patientFinalPreview" style="border:1px solid #e6e9ee; border-radius:8px; max-height:200px; overflow:auto; background:#fff;"></div>
+      </div>
+    </div>
+    
+    <div style="display:flex; gap:12px; justify-content:space-between; align-items:center; flex-shrink:0; padding:12px 20px; border-top:1px solid #e6e9ee; background:#f8f9fa;">
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn" id="patientPrevStepBtn" style="display:none;" onclick="patientPrevStep()">← Previous</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn" onclick="closePatientImportWizard()">Cancel</button>
+        <button type="button" class="btn primary" id="patientNextStepBtn" disabled onclick="patientNextStep()">Next →</button>
+        <button type="button" class="btn primary" id="patientImportBtn" style="display:none;" onclick="confirmPatientImport()">📤 Import Customers</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-spinner">
+    <div class="spinner"></div>
+    <div id="loadingText" class="loading-text">Processing data...</div>
+    <div id="loadingProgress" class="loading-progress"></div>
+  </div>
+</div>
+
+  <script>
+    const { ipcRenderer } = window.electron || require("electron");
+
+    // Cache profiles in renderer to avoid blocking UI on repeated opens
+    let profilesCache = null;
+    let profilesCacheTs = 0;
+
+    // Simple toast helper
+    function showToast(message, type = 'info', timeout = 3000) {
+      try {
+        const toast = document.getElementById('toast');
+        if (!toast) return;
+        toast.className = type;
+        toast.textContent = message;
+        toast.style.display = 'block';
+        // reset hide timer
+        if (toast._hideTimer) clearTimeout(toast._hideTimer);
+        toast._hideTimer = setTimeout(() => {
+          try { toast.style.display = 'none'; } catch (e) {}
+        }, timeout);
+      } catch (e) { console.error('showToast error', e); }
+    }
+
+    // Download sample Excel template for customer import
+    async function downloadSampleTemplate() {
+      const downloadBtn = document.getElementById('downloadSampleBtn');
+      try {
+        console.log('📥 Requesting customer import template download...');
+        downloadBtn.disabled = true;
+        downloadBtn.innerHTML = '<span>⏳</span><span>Downloading...</span>';
+        
+        const result = await ipcRenderer.invoke('download-sample-template', 'ImportPatientTemplate.xlsx');
+        
+        if (result.success) {
+          showToast(`✅ ${result.message}`, 'success', 4000);
+          console.log('✅ Customer import template downloaded to:', result.filePath);
+        } else if (result.canceled) {
+          console.log('📥 Download canceled by user');
+          showToast('Download canceled', 'info');
+        } else {
+          showToast(`❌ Download failed: ${result.error}`, 'error', 5000);
+          console.error('❌ Download error:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ Download sample template error:', error);
+        showToast(`❌ Failed to download template: ${error.message}`, 'error', 5000);
+      } finally {
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = '<span>📥</span><span>Download Sample</span>';
+      }
+    }
+
+    // Loading overlay helpers
+    function showLoading(text = 'Processing data...', progress = '') {
+      try {
+        const overlay = document.getElementById('loadingOverlay');
+        const textEl = document.getElementById('loadingText');
+        const progressEl = document.getElementById('loadingProgress');
+        if (overlay) {
+          overlay.style.display = 'flex';
+          if (textEl) textEl.textContent = text;
+          if (progressEl) progressEl.textContent = progress;
+        }
+      } catch (e) { console.error('showLoading error', e); }
+    }
+
+    function hideLoading() {
+      try {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'none';
+      } catch (e) { console.error('hideLoading error', e); }
+    }
+
+    function updateLoadingProgress(text, progress = '') {
+      try {
+        const textEl = document.getElementById('loadingText');
+        const progressEl = document.getElementById('loadingProgress');
+        if (textEl) textEl.textContent = text;
+        if (progressEl) progressEl.textContent = progress;
+      } catch (e) { console.error('updateLoadingProgress error', e); }
+    }
+
+    let grid;
+    let patientsData = [];
+
+    // Initialize Grid.js with DND toggle
+    function renderTable(data) {
+      // Move toolbar back to a stable placeholder before re-rendering the grid
+      try {
+        const toolbar = document.getElementById('tableToolbar');
+        const placeholder = document.getElementById('toolbarPlaceholder');
+        if (toolbar && placeholder && !placeholder.contains(toolbar)) placeholder.appendChild(toolbar);
+      } catch (e) { /* ignore */ }
+      if (grid) grid.destroy();
+
+      grid = new gridjs.Grid({
+        columns: [
+            { 
+              name: gridjs.html('<input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)">'),
+              formatter: (cell, row) => {
+                const unique = row.cells[1].data || row.cells[1] || ''; // unique_id is now at index 1
+                return gridjs.html(`<input type="checkbox" class="row-checkbox" data-unique-id="${unique}" onchange="handleRowSelection()">`);
+              },
+              sort: false,
+              width: '50px'
+            },
+            { name: 'Unique ID', formatter: (cell, row) => {
+                const raw = row.cells[1].data || row.cells[1] || '';
+                const s = String(raw || '');
+                const short = s.length > 10 ? s.slice(0,8) + '...' : s;
+                return gridjs.html(`<span title="${s}">${short}</span>`);
+              }
+            },
+            "Name",
+            "Phone",
+            "Last Visited",
+            { name: 'Profile' },
+            { name: 'Actions', formatter: (cell, row) => {
+                // row.cells: [checkbox, unique_id, name, phone, last_visited, profile, Is_DND]
+                const unique = row.cells[1].data || row.cells[1] || '';
+                const phone = row.cells[3].data || row.cells[3] || '';
+                const rawProfile = row.cells[5].data || row.cells[5] || '';
+                // compute profileText but do NOT display it here (Profile column shows it)
+                let profileText = '';
+                try {
+                  if (rawProfile && typeof rawProfile === 'object') {
+                    profileText = rawProfile.name || rawProfile.title || rawProfile._id || rawProfile.id || rawProfile.data || JSON.stringify(rawProfile);
+                  } else {
+                    profileText = String(rawProfile || '').trim();
+                  }
+                } catch (e) { profileText = String(rawProfile || ''); }
+                const isDnd = Number(row.cells[6].data || row.cells[6]) === 1;
+                const dndLabel = isDnd ? 'Unset DND' : '⛔ Set DND';
+                // Buttons only — layout horizontally with a small gap
+                return gridjs.html(`<div style="display:flex; gap:6px; align-items:center"><button class="assign-btn" data-unique="${unique}" data-phone="${phone}" data-profile="${profileText}">Assign</button><button class="dnd-btn" data-phone="${phone}" data-unique="${unique}" data-dnd="${isDnd ? 1 : 0}">${dndLabel}</button></div>`);
+              }
+            }
+          ],
+          data: data.map(p => ['', p.unique_id, p.name, p.phone, p.last_visited, p.profile || '', p.Is_DND || 0]),
+        pagination: { limit: 20 },
+        search: true,
+        sort: true,
+      }).render(document.getElementById("patientsTable"));
+
+      // Try to move our toolbar into the grid's search/header row so it appears on the same line as the "type a keyword" input
+      try {
+        const toolbar = document.getElementById('tableToolbar');
+        const gridContainer = document.getElementById('patientsTable');
+        if (toolbar && gridContainer) {
+          // Grid.js renders a .gridjs-search element; prefer to insert into it
+          const searchElem = gridContainer.querySelector('.gridjs-search');
+          if (searchElem) {
+            // make sure the search area uses flex so children align in a row
+            searchElem.style.display = 'flex';
+            searchElem.style.justifyContent = 'space-between';
+            searchElem.style.alignItems = 'center';
+            // move toolbar into the search row (on the right)
+            searchElem.appendChild(toolbar);
+            toolbar.style.marginLeft = '12px';
+          } else {
+            // fallback: place toolbar just above the table
+            const tableWrap = gridContainer.querySelector('.gridjs-wrapper') || gridContainer;
+            if (tableWrap && !tableWrap.contains(toolbar)) tableWrap.insertBefore(toolbar, tableWrap.firstChild);
+          }
+        }
+      } catch (e) { console.warn('Failed to reposition toolbar into grid header', e); }
+
+      // Debug: log how many rows we're rendering
+      try { console.log('renderTable: rendering', data ? data.length : 0, 'rows'); } catch (e) {}
+
+      // Attach a delegated click handler on the container so handlers survive Grid.js re-renders
+      const container = document.getElementById('patientsTable');
+      try {
+        // Remove any previous handler we attached
+        if (container._dndClickHandler && container.removeEventListener) container.removeEventListener('click', container._dndClickHandler);
+      } catch (e) { /* ignore */ }
+
+      container._dndClickHandler = async function (e) {
+        const target = e.target || e.srcElement;
+        if (!target) return;
+        if (target.classList && target.classList.contains('dnd-btn')) {
+          try {
+            const phone = target.getAttribute('data-phone');
+            const unique = target.getAttribute('data-unique');
+            const isDnd = Number(target.getAttribute('data-dnd')) === 1;
+            console.log('dnd-btn clicked', { phone, unique, isDnd });
+            const res = await ipcRenderer.invoke('set-dnd', { phone, unique_id: unique, isDnd: isDnd ? 0 : 1 });
+            console.log('set-dnd result', res);
+            if (res && res.success) {
+              showToast('DND updated', 'success');
+              await loadPatients();
+            } else {
+              showToast('Failed to update DND: ' + (res && res.error ? res.error : 'unknown'), 'error');
+            }
+          } catch (err) {
+            console.error('dnd button handler error:', err);
+            alert('Error updating DND: ' + (err && err.message ? err.message : String(err)));
+          }
+        }
+        // Assign profile button clicked
+        if (target.classList && target.classList.contains('assign-btn')) {
+          try {
+            const unique = target.getAttribute('data-unique');
+            const phone = target.getAttribute('data-phone');
+            const current = target.getAttribute('data-profile');
+            openAssignProfileDialog(unique, phone, current);
+          } catch (err) {
+            console.error('assign-btn handler error:', err);
+            alert('Error opening assign dialog: ' + (err && err.message ? err.message : String(err)));
+          }
+        }
+      };
+      try { container.addEventListener('click', container._dndClickHandler); } catch (e) { console.error('Failed to add delegated handler', e); }
+    }
+
+    // Tab state: 0 = active (Is_DND=0), 1 = DND (Is_DND=1)
+    let currentTab = 0;
+
+    // Load patients for current tab
+    async function loadPatients() {
+      patientsData = await ipcRenderer.invoke('get-patients-by-dnd', currentTab);
+      renderTable(patientsData);
+    }
+
+    function setTab(flag) {
+      currentTab = Number(flag);
+      document.getElementById('tabActive').style.fontWeight = currentTab === 0 ? 'bold' : 'normal';
+      document.getElementById('tabDnd').style.fontWeight = currentTab === 1 ? 'bold' : 'normal';
+      loadPatients();
+    }
+
+    // Add patient dialog
+    function openDialog() {
+      // clear inputs when opening add dialog
+      try {
+        document.getElementById("uniqueId").value = '';
+        document.getElementById("name").value = '';
+        document.getElementById("phone").value = '';
+        document.getElementById("lastVisited").value = '';
+        // populate profiles dropdown
+        try {
+          const sel = document.getElementById('profileSelect');
+          // clear existing options except the first placeholder
+          for (let i = sel.options.length - 1; i >= 1; i--) sel.remove(i);
+          ipcRenderer.invoke('get-profiles').then(list => {
+            if (!Array.isArray(list)) return;
+            for (const profile of list) {
+              try {
+                const opt = document.createElement('option');
+                opt.value = profile.name || profile;
+                const displayName = profile.name || profile;
+                const phoneNumber = profile.number || profile.phone || '';
+                opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+                sel.appendChild(opt);
+              } catch (e) {}
+            }
+          }).catch(err => { console.warn('Failed to load profiles for select', err); });
+        } catch (e) { console.warn('profile select populate failed', e); }
+      } catch (e) {}
+      document.getElementById("dialogBg").style.display = "flex";
+    }
+
+    function closeDialog() {
+      document.getElementById("dialogBg").style.display = "none";
+      // clear inputs when closing dialog to avoid stale prefilled values
+      try {
+        document.getElementById("uniqueId").value = '';
+        document.getElementById("name").value = '';
+        document.getElementById("phone").value = '';
+        document.getElementById("lastVisited").value = '';
+        try { document.getElementById('profileSelect').value = ''; } catch (e) {}
+      } catch (e) {}
+    }
+    
+    // Assign profile dialog helpers
+    function openAssignProfileDialog(unique, phone, currentProfile) {
+      try {
+        document.getElementById('assignUniqueId').value = unique || '';
+        document.getElementById('assignPhone').value = phone || '';
+        const sel = document.getElementById('assignProfileSelect');
+        // clear existing options except placeholder
+        for (let i = sel.options.length - 1; i >= 1; i--) sel.remove(i);
+        ipcRenderer.invoke('get-profiles').then(list => {
+          if (!Array.isArray(list)) return;
+          for (const profile of list) {
+            const opt = document.createElement('option');
+            opt.value = profile.name || profile;
+            const displayName = profile.name || profile;
+            const phoneNumber = profile.number || profile.phone || '';
+            opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+            sel.appendChild(opt);
+          }
+          try { sel.value = currentProfile || ''; } catch (e) {}
+        }).catch(err => { console.warn('Failed to load profiles for assign select', err); });
+        document.getElementById('assignProfileDialog').style.display = 'flex';
+      } catch (e) { console.error('openAssignProfileDialog failed', e); }
+    }
+
+    function closeAssignProfileDialog() {
+      try { document.getElementById('assignProfileDialog').style.display = 'none'; } catch (e) {}
+    }
+
+    async function saveAssignProfile() {
+      try {
+        const unique = document.getElementById('assignUniqueId').value || '';
+        const phone = document.getElementById('assignPhone').value || '';
+        const profile = document.getElementById('assignProfileSelect').value || null;
+        const res = await ipcRenderer.invoke('update-patient-profile', { unique_id: unique, phone, profile });
+        if (res && res.success) {
+          showToast('Profile updated', 'success');
+          closeAssignProfileDialog();
+          await loadPatients();
+        } else {
+          showToast('Failed to update profile: ' + (res && res.error ? res.error : 'unknown'), 'error');
+        }
+      } catch (e) {
+        console.error('saveAssignProfile failed', e);
+        showToast('Error updating profile: ' + (e && e.message ? e.message : String(e)), 'error');
+      }
+    }
+    
+    // Default profile picker
+    function openDefaultProfilePicker() {
+      try {
+        const bg = document.getElementById('defaultProfilePickerBg');
+        const sel = document.getElementById('defaultProfileSelect');
+        sel.innerHTML = '';
+        const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '(select)'; sel.appendChild(placeholder);
+        ipcRenderer.invoke('get-profiles').then(list => {
+          if (!Array.isArray(list) || list.length === 0) { showToast('No active profiles found', 'info'); return; }
+          for (const profile of list) {
+            const opt = document.createElement('option'); 
+            opt.value = profile.name || profile; 
+            const displayName = profile.name || profile;
+            const phoneNumber = profile.number || profile.phone || '';
+            opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+            sel.appendChild(opt);
+          }
+          bg.style.display = 'flex';
+        }).catch(err => { console.error('Failed to load profiles', err); showToast('Failed to load profiles', 'error'); });
+      } catch (e) { console.error('openDefaultProfilePicker failed', e); }
+    }
+
+    function closeDefaultProfilePicker() {
+      try { document.getElementById('defaultProfilePickerBg').style.display = 'none'; } catch (e) {}
+    }
+
+    async function applyDefaultProfile() {
+      try {
+        const sel = document.getElementById('defaultProfileSelect');
+        const profile = sel.value;
+        if (!profile) { alert('Please select a profile'); return; }
+        if (!confirm(`Set profile "${profile}" as default for all visible customers with blank profile?`)) return;
+
+        // Collect unique identifiers for patients with blank profile from patientsData
+        const ids = [];
+        for (const p of patientsData || []) {
+          const raw = p.profile || p.Profile || '';
+          if (!raw || String(raw).trim() === '') {
+            if (p.unique_id) ids.push(p.unique_id);
+            else if (p.phone) ids.push(p.phone);
+          }
+        }
+        if (!ids.length) { alert('No blank-profile customers found in the current view.'); closeDefaultProfilePicker(); return; }
+
+        const res = await ipcRenderer.invoke('bulk-set-default-profile', { profile, phones: ids });
+        if (res && res.success) {
+          showToast(`Updated ${res.changes || 0} customers`, 'success');
+          // Update local state and re-render
+          for (const p of patientsData || []) {
+            const raw = p.profile || p.Profile || '';
+            if (!raw || String(raw).trim() === '') p.profile = profile;
+          }
+          renderTable(patientsData);
+        } else {
+          showToast('Failed to update customers: ' + (res && res.error ? res.error : 'unknown'), 'error');
+        }
+      } catch (e) {
+        console.error('applyDefaultProfile failed', e);
+        showToast('Error applying default profile', 'error');
+      } finally {
+        closeDefaultProfilePicker();
+      }
+    }
+
+    // Update (rename) profile across patients
+    function openUpdateProfileDialog() {
+        try {
+          const startTs = Date.now();
+          const bg = document.getElementById('updateProfileDialogBg');
+          const toSel = document.getElementById('toProfileSelect');
+          const fromSel = document.getElementById('fromProfileSelect');
+          
+          // show overlay first so user can interact immediately while we fetch data
+          bg.style.display = 'flex';
+
+          // Clear both dropdowns
+          fromSel.innerHTML = '';
+          toSel.innerHTML = '';
+          
+          // Add placeholders
+          const fromPlaceholder = document.createElement('option'); 
+          fromPlaceholder.value = ''; 
+          fromPlaceholder.textContent = '(select existing profile)'; 
+          fromSel.appendChild(fromPlaceholder);
+          
+          const toPlaceholder = document.createElement('option'); 
+          toPlaceholder.value = ''; 
+          toPlaceholder.textContent = '(select)'; 
+          toSel.appendChild(toPlaceholder);
+
+          // Populate "from" dropdown with profiles currently assigned to patients
+          try {
+            const existingProfiles = new Set();
+            // Extract unique profiles from current patient data
+            for (const patient of patientsData || []) {
+              const profile = patient.profile || patient.Profile || '';
+              if (profile && String(profile).trim() !== '') {
+                existingProfiles.add(String(profile).trim());
+              }
+            }
+            
+            // Sort and add to dropdown
+            const sortedProfiles = Array.from(existingProfiles).sort();
+            for (const profileName of sortedProfiles) {
+              const opt = document.createElement('option');
+              opt.value = profileName;
+              opt.textContent = profileName;
+              fromSel.appendChild(opt);
+            }
+          } catch (e) {
+            console.warn('Failed to populate existing profiles dropdown', e);
+          }
+
+          // Populate "to" dropdown with all available profiles (with phone numbers)
+          // If we have a recent cache (5 min), populate immediately from cache to avoid IPC latency
+          const now = Date.now();
+          const cacheAgeMs = now - (profilesCacheTs || 0);
+          if (profilesCache && cacheAgeMs < 5 * 60 * 1000) {
+            try {
+              for (const profile of profilesCache) {
+                const opt = document.createElement('option'); 
+                opt.value = typeof profile === 'string' ? profile : (profile.name || profile);
+                const displayName = typeof profile === 'string' ? profile : (profile.name || profile);
+                const phoneNumber = typeof profile === 'object' ? (profile.number || profile.phone || '') : '';
+                opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+                toSel.appendChild(opt);
+              }
+            } catch (err) { 
+              console.warn('populate from cache failed', err); 
+            }
+            // still refresh cache in background
+            ipcRenderer.invoke('get-profiles').then(list => {
+              try {
+                if (!Array.isArray(list)) return;
+                profilesCache = list.slice(); 
+                profilesCacheTs = Date.now();
+                // update select if changed
+                if (toSel.options.length - 1 !== list.length) {
+                  // rebuild options
+                  for (let i = toSel.options.length - 1; i >= 1; i--) toSel.remove(i);
+                  for (const profile of list) {
+                    const opt = document.createElement('option'); 
+                    opt.value = profile.name || profile;
+                    const displayName = profile.name || profile;
+                    const phoneNumber = profile.number || profile.phone || '';
+                    opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+                    toSel.appendChild(opt);
+                  }
+                }
+              } catch (err) { 
+                console.warn('background refresh failed', err); 
+              }
+            }).catch(err => { 
+              console.warn('background get-profiles failed', err); 
+            });
+          } else {
+            // no cache: fetch and populate but do not block input
+            ipcRenderer.invoke('get-profiles').then(list => {
+              try {
+                if (!Array.isArray(list) || list.length === 0) { 
+                  showToast('No active profiles found', 'info'); 
+                  return; 
+                }
+                profilesCache = list.slice(); 
+                profilesCacheTs = Date.now();
+                for (const profile of list) {
+                  const opt = document.createElement('option'); 
+                  opt.value = profile.name || profile;
+                  const displayName = profile.name || profile;
+                  const phoneNumber = profile.number || profile.phone || '';
+                  opt.textContent = phoneNumber ? `${displayName} (${phoneNumber})` : displayName;
+                  toSel.appendChild(opt);
+                }
+              } catch (err) { 
+                console.warn('populate toProfileSelect failed', err); 
+              }
+            }).catch(err => { 
+              console.error('Failed to load profiles for update dialog', err); 
+              showToast('Failed to load profiles', 'error'); 
+            });
+          }
+
+          console.log('openUpdateProfileDialog: done show in', Date.now() - startTs, 'ms');
+        } catch (e) { 
+          console.error('openUpdateProfileDialog failed', e); 
+        }
+    }
+
+  function closeUpdateProfileDialog() { 
+    try { 
+      document.getElementById('updateProfileDialogBg').style.display = 'none'; 
+    } catch (e) {} 
+    try { 
+      const fromSel = document.getElementById('fromProfileSelect'); 
+      if (fromSel) fromSel.value = ''; 
+    } catch (e) {} 
+    try { 
+      const toSel = document.getElementById('toProfileSelect'); 
+      if (toSel) toSel.value = ''; 
+    } catch (e) {} 
+  }
+
+    async function applyUpdateProfile() {
+      try {
+        const fromProfile = (document.getElementById('fromProfileSelect').value || '').trim();
+        const toProfile = (document.getElementById('toProfileSelect').value || '').trim();
+        if (!fromProfile) { alert('Please select the existing profile to replace'); return; }
+        if (!toProfile) { alert('Please select the target profile'); return; }
+        if (!confirm(`Replace all customers with profile "${fromProfile}" to "${toProfile}"?`)) return;
+
+        const res = await ipcRenderer.invoke('bulk-rename-profile', { fromProfile, toProfile });
+        if (res && res.success) {
+          showToast(`Updated ${res.changes || 0} customers`, 'success');
+          // Refresh list to reflect changes
+          // Invalidate profiles cache so the next dialog shows fresh values
+          profilesCache = null; profilesCacheTs = 0;
+          await loadPatients();
+        } else {
+          showToast('Failed to update customers: ' + (res && res.error ? res.error : 'unknown'), 'error');
+        }
+      } catch (e) {
+        console.error('applyUpdateProfile failed', e);
+        showToast('Error updating profiles', 'error');
+      } finally { closeUpdateProfileDialog(); }
+    }
+    
+    async function savePatient() {
+      const uniqueVal = document.getElementById("uniqueId").value;
+      const lastVisitedVal = document.getElementById("lastVisited").value;
+      const patient = {
+        uniqueId: uniqueVal,
+        unique_id: uniqueVal,
+        name: document.getElementById("name").value,
+        phone: document.getElementById("phone").value,
+        profile: (document.getElementById("profileSelect") && document.getElementById("profileSelect").value) || null,
+        lastVisited: lastVisitedVal,
+        last_visited: lastVisitedVal
+      };
+      try {
+        const res = await ipcRenderer.invoke("add-patient", patient);
+        console.log('add-patient result:', res);
+        // Better-sqlite3 returns an object; treat missing result as failure
+        if (res && (typeof res.changes !== 'undefined' || typeof res.lastInsertRowid !== 'undefined')) {
+          showToast('Customer saved', 'success');
+        } else {
+          showToast('Customer save returned unexpected result', 'info');
+        }
+      } catch (e) {
+        console.error('add-patient invoke failed', e);
+        showToast('Failed to save customer: ' + (e && e.message ? e.message : String(e)), 'error');
+      }
+      // Refresh table and then clear+close dialog
+      try { await loadPatients(); } catch (e) { console.error('loadPatients after save failed', e); }
+      try {
+        document.getElementById("uniqueId").value = '';
+        document.getElementById("name").value = '';
+        document.getElementById("phone").value = '';
+        document.getElementById("lastVisited").value = '';
+      } catch (e) {}
+      closeDialog();
+    }
+
+    let selectedExcelFile = null;
+  
+    async function importPatients() {
+    const fileInput = document.getElementById("excelInput");
+    const selectedFile = fileInput.files[0];
+    if (!selectedFile) {
+      alert("Please select an Excel file first.");
+      return;
+    }
+
+    const arrayBuffer = await selectedFile.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const filePath = await ipcRenderer.invoke("save-patientExcel-file", {
+      name: selectedFile.name,
+      data: buffer
+      });
+
+      if (filePath) {
+        console.log("File saved at:", filePath);
+        // Step 2: Import patients from saved file
+        const result = await ipcRenderer.invoke("import-patients", filePath);
+
+        if (result.success) {
+          alert(`Imported ${result.count} Customers successfully.`);
+        } else {
+          alert("Import failed: " + result.error);
+        }
+      } else {
+        alert("Failed to save file.");
+      }
+
+      fileInput.value = ""; 
+      loadPatients()
+}
+
+    // Export to Excel
+    // Export ALL customers (both Active and DND) from database
+    async function exportPatients() {
+      try {
+        showToast('Preparing export of all customers...', 'info', 1500);
+        
+        // Get ALL customers from database (both Active and DND)
+        const allCustomers = await ipcRenderer.invoke('get-all-patients-for-export');
+        
+        if (!allCustomers || !Array.isArray(allCustomers)) {
+          showToast('Failed to retrieve customer data for export', 'error');
+          return;
+        }
+        
+        if (allCustomers.length === 0) {
+          showToast('No customers found to export', 'info');
+          return;
+        }
+
+        const res = await ipcRenderer.invoke("export-patients", allCustomers);
+        if (!res) {
+          showToast('Export failed: unknown error', 'error');
+          return;
+        }
+        if (res.canceled) {
+          showToast('Export canceled', 'info', 2000);
+          return;
+        }
+        if (res.success) {
+          showToast('Export saved: ' + (res.file || ''), 'success', 4000);
+        } else {
+          showToast('Export failed: ' + (res.error || 'unknown'), 'error');
+        }
+      } catch (e) {
+        console.error('exportPatients failed', e);
+        showToast('Export failed: ' + (e && e.message ? e.message : String(e)), 'error');
+      }
+    }
+
+    // Patient import dialog handlers
+function openPatientImportDialog() {
+  document.getElementById("importPatientsDialog").style.display = "flex";
+}
+
+function closeImportPatientsDialog() {
+  document.getElementById("importPatientsDialog").style.display = "none";
+  try { document.getElementById('importPatientsFile').value = ''; } catch (e) {}
+}
+
+async function handleImportPatients() {
+  const fileInput = document.getElementById("importPatientsFile");
+  const selectedFile = fileInput.files[0];
+  if (!selectedFile) {
+    alert("Please select a file.");
+    return;
+  }
+
+  try {
+    showLoading('Preparing file for upload...', 'Reading Excel file');
+    
+    const arrayBuffer = await selectedFile.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    updateLoadingProgress('Uploading file to server...', 'Saving Excel file');
+    const filePath = await ipcRenderer.invoke("save-patientExcel-file", {
+      name: selectedFile.name,
+      data: buffer
+    });
+
+    if (filePath) {
+      updateLoadingProgress('Importing customers from Excel...', 'Processing rows and inserting data');
+      const result = await ipcRenderer.invoke("import-patients", filePath);
+      
+      hideLoading();
+      
+      if (result.success) {
+        showToast(`Imported ${result.count} customers successfully!`, 'success');
+      } else {
+        showToast("Import failed: " + result.error, 'error');
+      }
+    } else {
+      hideLoading();
+      showToast("Failed to save file.", 'error');
+    }
+  } catch (error) {
+    hideLoading();
+    showToast("Import error: " + (error.message || error), 'error');
+    console.error('Import error:', error);
+  } finally {
+    fileInput.value = "";
+    closeImportPatientsDialog();
+    loadPatients();
+  }
+}
+
+// DND button placeholder (update as needed)
+function openDND() {
+  // clear input when opening
+  try { document.getElementById('dndphone').value = ''; } catch (e) {}
+  document.getElementById("dialogdnDBg").style.display = "flex";
+}
+
+function closeDNDDialog() {
+  document.getElementById("dialogdnDBg").style.display = "none";
+  try { document.getElementById('dndphone').value = ''; } catch (e) {}
+}
+    
+async function updateDND() {
+  try {
+    const phoneVal = document.getElementById("dndphone").value;
+  console.log('updateDND clicked, phone=', phoneVal);
+
+    if (!ipcRenderer) {
+      console.error('ipcRenderer is not available in renderer');
+      showToast('Internal error: ipcRenderer not available', 'error');
+      return;
+    }
+
+    const patient = { phone: phoneVal };
+
+    const result = await ipcRenderer.invoke("update-dnd", patient);
+    console.log('update-dnd result:', result);
+
+    if (result && result.changes > 0) {
+      showToast('DND updated', 'success');
+      await loadPatients(); // refresh table
+    } else if (result && result.success === false && result.error) {
+      showToast('Update failed: ' + result.error, 'error');
+    } else {
+      showToast('Update completed but no rows were changed.', 'info');
+    }
+  } catch (err) {
+  console.error('updateDND error:', err);
+  showToast('Error while updating DND: ' + (err && err.message ? err.message : String(err)), 'error');
+  } finally {
+    try { await loadPatients(); } catch (e) { console.error('loadPatients after update failed', e); }
+    closeDNDDialog();
+  }
+}
+
+
+
+
+
+
+// DND import dialog handlers
+function openDNDImportDialog() {
+  document.getElementById("importDndDialog").style.display = "flex";
+}
+
+function closeImportDndDialog() {
+  document.getElementById("importDndDialog").style.display = "none";
+}
+
+async function handleImportDnd() {
+  const fileInput = document.getElementById("importDndFile");
+  const selectedFile = fileInput.files[0];
+  if (!selectedFile) {
+    alert("Please select a file.");
+    return;
+  }
+
+  const arrayBuffer = await selectedFile.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const filePath = await ipcRenderer.invoke("save-dndExcel-file", {
+    name: selectedFile.name,
+    data: buffer
+  });
+
+  if (filePath) {
+    const result = await ipcRenderer.invoke("import-dnd", filePath);
+    if (result.success) {
+      alert(`Imported ${result.count} DND entries successfully.`);
+      loadPatients();
+    } else {
+      alert("DND Import failed: " + result.error);
+    }
+  } else {
+    alert("Failed to save DND file.");
+  }
+
+  fileInput.value = "";
+  closeImportDndDialog();
+}
+
+function closeImportDndDialog() {
+  document.getElementById("importDndDialog").style.display = "none";
+  try { document.getElementById('importDndFile').value = ''; } catch (e) {}
+}
+
+// Sync Report Functions
+let syncReportData = [];
+let currentSyncTab = 'all'; // 'all', 'new', 'existing'
+
+async function showSyncReport() {
+  try {
+    showToast('Loading sync report...', 'info', 1000);
+    
+    const result = await ipcRenderer.invoke('get-sync-report');
+    
+    if (!result.success) {
+      showToast(result.message || result.error || 'Failed to load sync report', 'error');
+      return;
+    }
+    
+    syncReportData = result.data || [];
+    const summary = result.summary || {};
+    
+    // Display summary
+    displaySyncReportSummary(summary);
+    
+    // Reset to "All" tab and display table
+    currentSyncTab = 'all';
+    setSyncTab('all');
+    
+    // Show dialog
+    document.getElementById('syncReportDialog').style.display = 'flex';
+    
+  } catch (error) {
+    console.error('showSyncReport error:', error);
+    showToast('Error loading sync report: ' + (error.message || error), 'error');
+  }
+}
+
+function setSyncTab(tabType) {
+  currentSyncTab = tabType;
+  
+  // Update button styles
+  document.getElementById('syncTabAll').style.fontWeight = tabType === 'all' ? 'bold' : 'normal';
+  document.getElementById('syncTabAll').style.background = tabType === 'all' ? '#e2e8f0' : '#ffffff';
+  
+  document.getElementById('syncTabNew').style.fontWeight = tabType === 'new' ? 'bold' : 'normal';
+  document.getElementById('syncTabNew').style.background = tabType === 'new' ? '#fef2f2' : '#ffffff';
+  
+  document.getElementById('syncTabExisting').style.fontWeight = tabType === 'existing' ? 'bold' : 'normal';
+  document.getElementById('syncTabExisting').style.background = tabType === 'existing' ? '#eff6ff' : '#ffffff';
+  
+  // Filter and display data
+  const filteredData = filterSyncReportData(syncReportData, tabType);
+  displaySyncReportTable(filteredData);
+}
+
+function filterSyncReportData(data, tabType) {
+  if (tabType === 'all') {
+    return data;
+  } else if (tabType === 'new') {
+    return data.filter(patient => patient.IsNew === 1);
+  } else if (tabType === 'existing') {
+    return data.filter(patient => patient.IsNew === 0);
+  }
+  return data;
+}
+
+function displaySyncReportSummary(summary) {
+  const summaryDiv = document.getElementById('syncReportSummary');
+  const filedate = summary.latestFiledate ? summary.latestFiledate.replace('T', ' ').replace('Z', '').split('.')[0] : 'N/A';
+  
+  summaryDiv.innerHTML = `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+      <div style="text-align:center;">
+        <div style="font-weight:bold; color:#1f2937;">Latest Import</div>
+        <div style="font-size:14px; color:#6b7280;">${filedate}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-weight:bold; color:#1f2937;">Total Patients</div>
+        <div style="font-size:18px; color:#059669;">${summary.totalPatients || 0}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-weight:bold; color:#1f2937;">New Patients</div>
+        <div style="font-size:18px; color:#dc2626;">${summary.newPatients || 0}</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-weight:bold; color:#1f2937;">Existing Patients</div>
+        <div style="font-size:18px; color:#2563eb;">${summary.existingPatients || 0}</div>
+      </div>
+    </div>
+  `;
+}
+
+function displaySyncReportTable(data) {
+  const tableDiv = document.getElementById('syncReportTable');
+  
+  if (!data || data.length === 0) {
+    tableDiv.innerHTML = '<div style="padding:20px; text-align:center; color:#6b7280;">No data found</div>';
+    return;
+  }
+  
+  let tableHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead style="background:#f1f5f9; position:sticky; top:0;">
+        <tr>
+          <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Name</th>
+          <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Phone</th>
+          <th style="padding:8px; text-align:center; border-bottom:1px solid #e2e8f0;">Status</th>
+          <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Profile</th>
+          <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Last Visit</th>
+          <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Import Date</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  data.forEach((patient, index) => {
+    const isNew = patient.IsNew === 1;
+    const statusBadge = isNew 
+      ? '<span style="background:#fef2f2; color:#dc2626; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600;">New</span>'
+      : '<span style="background:#eff6ff; color:#2563eb; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600;">Existing</span>';
+    
+    const importDate = patient.Filedate ? patient.Filedate.replace('T', ' ').replace('Z', '').split('.')[0] : 'N/A';
+    const lastVisit = patient.last_visited || 'N/A';
+    const profile = patient.profile || '-';
+    
+    const rowStyle = index % 2 === 0 ? 'background:#ffffff;' : 'background:#f8fafc;';
+    
+    tableHTML += `
+      <tr style="${rowStyle}">
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${patient.name || ''}</td>
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${patient.phone || ''}</td>
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${statusBadge}</td>
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${profile}</td>
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${lastVisit}</td>
+        <td style="padding:8px; border-bottom:1px solid #f1f5f9;">${importDate}</td>
+      </tr>
+    `;
+  });
+  
+  tableHTML += '</tbody></table>';
+  tableDiv.innerHTML = tableHTML;
+}
+
+function closeSyncReportDialog() {
+  document.getElementById('syncReportDialog').style.display = 'none';
+  syncReportData = [];
+  currentSyncTab = 'all';
+}
+
+async function exportSyncReport() {
+  try {
+    if (!syncReportData || syncReportData.length === 0) {
+      showToast('No data to export', 'info');
+      return;
+    }
+    
+    // Get filtered data based on current tab
+    const filteredData = filterSyncReportData(syncReportData, currentSyncTab);
+    
+    if (filteredData.length === 0) {
+      showToast('No data to export for current filter', 'info');
+      return;
+    }
+    
+    // Prepare data for export
+    const exportData = filteredData.map(patient => ({
+      Name: patient.name || '',
+      Phone: patient.phone || '',
+      Status: patient.IsNew === 1 ? 'New Patient' : 'Existing Patient',
+      Profile: patient.profile || '',
+      'Last Visit': patient.last_visited || '',
+      'Import Date': patient.Filedate ? patient.Filedate.replace('T', ' ').replace('Z', '').split('.')[0] : '',
+      'Unique ID': patient.unique_id || ''
+    }));
+    
+    const res = await ipcRenderer.invoke("export-patients", exportData);
+    
+    if (!res) {
+      showToast('Export failed: unknown error', 'error');
+      return;
+    }
+    if (res.canceled) {
+      showToast('Export canceled', 'info', 2000);
+      return;
+    }
+    if (res.success) {
+      const filterText = currentSyncTab === 'all' ? 'All' : currentSyncTab === 'new' ? 'New' : 'Existing';
+      showToast(`${filterText} patients sync report exported: ` + (res.file || ''), 'success', 4000);
+    } else {
+      showToast('Export failed: ' + (res.error || 'unknown'), 'error');
+    }
+  } catch (error) {
+    console.error('exportSyncReport error:', error);
+    showToast('Export failed: ' + (error.message || error), 'error');
+  }
+}
+
+  // Set initial tab and load
+  setTab(0);
+
+  // ==================== SELECTION & DELETE FUNCTIONALITY ====================
+  let selectedCustomers = new Set();
+
+  function handleRowSelection() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    selectedCustomers.clear();
+    
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        selectedCustomers.add(cb.getAttribute('data-unique-id'));
+      }
+    });
+    
+    updateSelectionUI();
+  }
+
+  function updateSelectionUI() {
+    const selectionDiv = document.getElementById('selectionActions');
+    const countSpan = document.getElementById('selectedCount');
+    const selectAllCb = document.getElementById('selectAllCheckbox');
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    
+    if (selectedCustomers.size > 0) {
+      selectionDiv.style.display = 'block';
+      countSpan.textContent = `${selectedCustomers.size} customer${selectedCustomers.size !== 1 ? 's' : ''} selected`;
+    } else {
+      selectionDiv.style.display = 'none';
+    }
+    
+    // Update select all checkbox state
+    if (selectAllCb) {
+      const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+      const totalCount = checkboxes.length;
+      
+      if (checkedCount === 0) {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = false;
+      } else if (checkedCount === totalCount) {
+        selectAllCb.checked = true;
+        selectAllCb.indeterminate = false;
+      } else {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = true;
+      }
+    }
+  }
+
+  function toggleSelectAll(selectAllCheckbox) {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    const isChecking = selectAllCheckbox.checked;
+    
+    checkboxes.forEach(cb => {
+      cb.checked = isChecking;
+    });
+    
+    handleRowSelection();
+  }
+
+  function selectAll() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+    handleRowSelection();
+  }
+
+  function clearSelection() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    const selectAllCb = document.getElementById('selectAllCheckbox');
+    if (selectAllCb) selectAllCb.checked = false;
+    handleRowSelection();
+  }
+
+  async function deleteSelectedCustomers() {
+    if (selectedCustomers.size === 0) {
+      alert('Please select customers to delete.');
+      return;
+    }
+    
+    const confirmMsg = `Are you sure you want to delete ${selectedCustomers.size} selected customer${selectedCustomers.size !== 1 ? 's' : ''}?\n\nThis action cannot be undone.`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    try {
+      showToast('Deleting selected customers...', 'info');
+      
+      const uniqueIds = Array.from(selectedCustomers);
+      const result = await ipcRenderer.invoke('delete-customers-bulk', uniqueIds);
+      
+      if (result && result.success) {
+        showToast(`Successfully deleted ${result.deletedCount} customer${result.deletedCount !== 1 ? 's' : ''}!`, 'success');
+        clearSelection();
+        await loadPatients();
+      } else {
+        showToast('Failed to delete customers: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting customers:', error);
+      showToast('Error deleting customers: ' + error.message, 'error');
+    }
+  }
+
+  // Separate function for Delete All Records button (no selection needed)
+  async function deleteAllRecords() {
+    const confirmMsg = `⚠️ DELETE ALL RECORDS ⚠️\n\nThis will PERMANENTLY DELETE all customer records from the database!\n\nSQL Query: DELETE FROM patients;\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?`;
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    // Second confirmation
+    const finalConfirm = confirm("⚠️ FINAL WARNING ⚠️\n\nYou are about to delete ALL customer data!\n\nClick OK to proceed or Cancel to abort.");
+    
+    if (!finalConfirm) {
+      return;
+    }
+    
+    try {
+      showToast('Executing DELETE FROM patients...', 'info');
+      
+      const result = await ipcRenderer.invoke('delete-all-records-direct');
+      
+      if (result && result.success) {
+        showToast(`Successfully deleted all records! Removed ${result.deletedCount} customers.`, 'success', 5000);
+        clearSelection();
+        await loadPatients();
+      } else {
+        showToast('Failed to delete records: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting all records:', error);
+      showToast('Error deleting all records: ' + error.message, 'error');
+    }
+  }
+
+  // ==================== PATIENT IMPORT WIZARD ====================
+  let patientWizardData = {
+    selectedFile: null,
+    excelData: null,
+    currentStep: 1,
+    headerRowIndex: 1,
+    columnMappings: {},
+    originalFilePath: null
+  };
+
+  function openPatientImportWizard() {
+    console.log('Opening patient import wizard...');
+    document.getElementById('patientImportWizard').style.display = 'flex';
+    resetPatientWizard();
+  }
+
+  function closePatientImportWizard() {
+    console.log('Closing patient import wizard...');
+    document.getElementById('patientImportWizard').style.display = 'none';
+    resetPatientWizard();
+  }
+
+  function resetPatientWizard() {
+    patientWizardData = {
+      selectedFile: null,
+      excelData: null,
+      currentStep: 1,
+      headerRowIndex: 1,
+      columnMappings: {},
+      originalFilePath: null
+    };
+    updatePatientWizardSteps();
+    showPatientWizardStep(1);
+    document.getElementById('patientNextStepBtn').disabled = true;
+    document.getElementById('patientNextStepBtn').style.display = 'inline-block';
+    document.getElementById('patientImportBtn').style.display = 'none';
+    document.getElementById('patientPrevStepBtn').style.display = 'none';
+    document.getElementById('patientSelectedFileInfo').style.display = 'none';
+    document.getElementById('patientHiddenInput').value = '';
+  }
+
+  function updatePatientWizardSteps() {
+    const steps = document.querySelectorAll('#patientImportWizard .step');
+    steps.forEach((step, index) => {
+      const stepNumber = index + 1;
+      step.classList.remove('active', 'completed');
+      const stepNumberEl = step.querySelector('.step-number');
+      
+      if (stepNumber < patientWizardData.currentStep) {
+        step.classList.add('completed');
+        step.style.color = '#28a745';
+        if (stepNumberEl) {
+          stepNumberEl.style.borderColor = '#28a745';
+          stepNumberEl.style.background = '#28a745';
+          stepNumberEl.style.color = '#fff';
+        }
+      } else if (stepNumber === patientWizardData.currentStep) {
+        step.classList.add('active');
+        step.style.color = '#2563eb';
+        if (stepNumberEl) {
+          stepNumberEl.style.borderColor = '#2563eb';
+          stepNumberEl.style.background = '#fff';
+          stepNumberEl.style.color = '#2563eb';
+        }
+      } else {
+        step.style.color = '#999';
+        if (stepNumberEl) {
+          stepNumberEl.style.borderColor = '#ddd';
+          stepNumberEl.style.background = '#fff';
+          stepNumberEl.style.color = '#999';
+        }
+      }
+    });
+  }
+
+  function showPatientWizardStep(step) {
+    // Hide all wizard content
+    document.querySelectorAll('#patientImportWizard .wizard-content').forEach(content => {
+      content.classList.remove('active');
+      content.style.display = 'none';
+    });
+    
+    // Show current step
+    const stepElement = document.getElementById(`patientWizardStep${step}`);
+    if (stepElement) {
+      stepElement.classList.add('active');
+      stepElement.style.display = 'block';
+    }
+    
+    patientWizardData.currentStep = step;
+    updatePatientWizardSteps();
+    updatePatientWizardButtons();
+  }
+
+  function updatePatientWizardButtons() {
+    const prevBtn = document.getElementById('patientPrevStepBtn');
+    const nextBtn = document.getElementById('patientNextStepBtn');
+    const importBtn = document.getElementById('patientImportBtn');
+    
+    console.log('🔄 Updating buttons for step:', patientWizardData.currentStep);
+    
+    // Previous button
+    prevBtn.style.display = patientWizardData.currentStep > 1 ? 'inline-block' : 'none';
+    
+    // Next/Import button
+    if (patientWizardData.currentStep === 4) {
+      nextBtn.style.display = 'none';
+      importBtn.style.display = 'inline-block';
+      
+      // Validate required mappings before enabling import
+      const hasRequiredMappings = validateRequiredMappings();
+      importBtn.disabled = !hasRequiredMappings;
+      
+      if (!hasRequiredMappings) {
+        importBtn.textContent = 'Missing Required Fields';
+        importBtn.style.opacity = '0.6';
+        importBtn.style.cursor = 'not-allowed';
+      } else {
+        importBtn.textContent = '✓ Import Customers';
+        importBtn.style.opacity = '1';
+        importBtn.style.cursor = 'pointer';
+      }
+      
+      console.log('📤 Import button - Required mappings valid:', hasRequiredMappings);
+    } else {
+      nextBtn.style.display = 'inline-block';
+      importBtn.style.display = 'none';
+      
+      // Enable/disable next based on current step validation
+      switch (patientWizardData.currentStep) {
+        case 1:
+          nextBtn.disabled = !patientWizardData.selectedFile;
+          nextBtn.textContent = patientWizardData.selectedFile ? 'Next →' : 'Select File First';
+          console.log('📁 Step 1 - File selected:', !!patientWizardData.selectedFile);
+          break;
+        case 2:
+          nextBtn.disabled = !patientWizardData.excelData;
+          nextBtn.textContent = 'Next →';
+          console.log('📋 Step 2 - Data parsed:', !!patientWizardData.excelData);
+          break;
+        case 3:
+          const hasRequiredMappings = validateRequiredMappings();
+          nextBtn.disabled = !hasRequiredMappings;
+          nextBtn.textContent = hasRequiredMappings ? 'Next →' : 'Map Required Fields First';
+          console.log('🔗 Step 3 - Required mappings valid:', hasRequiredMappings);
+          
+          // Also disable import button if validation fails
+          if (!hasRequiredMappings) {
+            document.getElementById('patientImportBtn').disabled = true;
+          }
+          break;
+        default:
+          nextBtn.disabled = false;
+          nextBtn.textContent = 'Next →';
+      }
+      
+      // Add visual feedback for disabled state
+      if (nextBtn.disabled) {
+        nextBtn.style.opacity = '0.6';
+        nextBtn.style.cursor = 'not-allowed';
+      } else {
+        nextBtn.style.opacity = '1';
+        nextBtn.style.cursor = 'pointer';
+      }
+    }
+    
+    console.log('✅ Button states updated');
+  }
+
+  function patientNextStep() {
+    if (patientWizardData.currentStep < 4) {
+      switch (patientWizardData.currentStep) {
+        case 1:
+          if (patientWizardData.selectedFile) {
+            patientWizardData.currentStep = 2;
+            showPatientStep2();
+          } else {
+            alert('Please select a file first.');
+            return;
+          }
+          break;
+        case 2:
+          if (patientWizardData.excelData) {
+            patientWizardData.currentStep = 3;
+            showPatientStep3();
+          } else {
+            alert('Please wait for file to be parsed.');
+            return;
+          }
+          break;
+        case 3:
+          if (validateRequiredMappings()) {
+            patientWizardData.currentStep = 4;
+            showPatientStep4();
+          } else {
+            alert('Please map all required fields: unique_id, phone, last_visited');
+            return;
+          }
+          break;
+      }
+      showPatientWizardStep(patientWizardData.currentStep);
+    }
+  }
+
+  function patientPrevStep() {
+    if (patientWizardData.currentStep > 1) {
+      patientWizardData.currentStep--;
+      showPatientWizardStep(patientWizardData.currentStep);
+    }
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function handlePatientFileSelection(file) {
+    if (!file) return;
+    
+    // Validate file type
+    const validTypes = ['.xlsx', '.xls', '.csv'];
+    const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+    if (!validTypes.includes(fileExt)) {
+      alert('Please select a valid Excel (.xlsx, .xls) or CSV file.');
+      return;
+    }
+
+    patientWizardData.selectedFile = file;
+    
+    // Show file info
+    document.getElementById('patientSelectedFileInfo').innerHTML = `
+      <div class="file-info">
+        <div class="file-info-icon">📊</div>
+        <div class="file-info-details">
+          <div class="file-info-name">${file.name}</div>
+          <div class="file-info-size">${formatFileSize(file.size)}</div>
+        </div>
+      </div>
+    `;
+    document.getElementById('patientSelectedFileInfo').style.display = 'block';
+    
+    // Enable next step
+    updatePatientWizardButtons();
+    
+    // Parse file for preview
+    parsePatientExcelFile(file);
+  }
+
+  function parsePatientExcelFile(file) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+      try {
+        const data = e.target.result;
+        
+        if (file.name.toLowerCase().endsWith('.csv')) {
+          // Handle CSV files
+          const text = new TextDecoder().decode(data);
+          const lines = text.split('\n').filter(line => line.trim());
+          patientWizardData.excelData = lines.map(line => {
+            // Enhanced CSV parsing with better quote handling
+            const cells = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              const nextChar = line[i + 1];
+              
+              if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                  // Escaped quote inside quoted field
+                  current += '"';
+                  i++; // Skip next quote
+                } else {
+                  inQuotes = !inQuotes;
+                }
+              } else if (char === ',' && !inQuotes) {
+                cells.push(current.trim());
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            cells.push(current.trim());
+            return cells;
+          });
+          
+          // Filter out completely empty rows
+          patientWizardData.excelData = patientWizardData.excelData.filter(row => 
+            row.some(cell => cell !== null && cell !== undefined && cell.toString().trim() !== '')
+          );
+          
+          console.log('✅ CSV data parsed successfully:', patientWizardData.excelData.length + ' rows');
+          updatePatientWizardButtons();
+          
+        } else {
+          // For Excel files, send to main process for parsing
+          const buffer = Buffer.from(data);
+          
+          // Send to main process for Excel parsing
+          ipcRenderer.send('parse-excel-file', {
+            fileName: file.name,
+            buffer: buffer
+          });
+          
+          // Listen for parsed result
+          ipcRenderer.once('parse-excel-file-response', (event, response) => {
+            if (response.success) {
+              patientWizardData.excelData = response.data;
+              patientWizardData.originalFilePath = response.originalFilePath;
+              console.log('✅ Excel data parsed successfully:', patientWizardData.excelData.length + ' rows');
+              updatePatientWizardButtons();
+            } else {
+              console.error('❌ Error parsing Excel:', response.error);
+              alert('Error parsing Excel file: ' + response.error);
+            }
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error reading file:', error);
+        alert('Error reading file: ' + error.message + '. Please check the file format and try again.');
+      }
+    };
+    
+    reader.onerror = function() {
+      alert('Error reading file. Please try again.');
+    };
+    
+    // Read file as ArrayBuffer
+    reader.readAsArrayBuffer(file);
+  }
+
+  function showPatientStep2() {
+    if (patientWizardData.excelData && patientWizardData.excelData.length > 0) {
+      let previewHtml = '<table class="excel-table">';
+      for (let i = 0; i < Math.min(10, patientWizardData.excelData.length); i++) {
+        const isHeaderRow = i === (patientWizardData.headerRowIndex - 1);
+        previewHtml += `<tr ${isHeaderRow ? 'style="background:#e6f0ff;font-weight:bold"' : ''}>`;
+        patientWizardData.excelData[i].forEach(cell => {
+          previewHtml += `<td>${cell || ''}</td>`;
+        });
+        previewHtml += '</tr>';
+      }
+      previewHtml += '</table>';
+      document.getElementById('patientExcelPreview').innerHTML = previewHtml;
+    }
+    
+    document.getElementById('patientHeaderRowSelect').onchange = () => {
+      patientWizardData.headerRowIndex = parseInt(document.getElementById('patientHeaderRowSelect').value);
+      showPatientStep2();
+    };
+  }
+
+  function showPatientStep3() {
+    if (patientWizardData.excelData && patientWizardData.headerRowIndex <= patientWizardData.excelData.length) {
+      const headers = patientWizardData.excelData[patientWizardData.headerRowIndex - 1];
+      const requiredFields = ['unique_id', 'phone', 'last_visited'];
+      const recommendedFields = ['name', 'profile'];
+      
+      let mappingHtml = '';
+      
+      // Add required fields first
+      requiredFields.forEach(field => {
+        mappingHtml += `
+          <div class="mapping-row">
+            <div style="flex:1;font-weight:500">${field} <span style="color:red;">*</span></div>
+            <div class="mapping-arrow">→</div>
+            <select class="mapping-select" data-field="${field}">
+              <option value="">Select Column</option>
+              ${headers.map((header, index) => `<option value="${index}">${header}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      });
+      
+      // Add recommended fields
+      recommendedFields.forEach(field => {
+        mappingHtml += `
+          <div class="mapping-row">
+            <div style="flex:1;font-weight:500">${field} <span style="color:orange;">~</span></div>
+            <div class="mapping-arrow">→</div>
+            <select class="mapping-select" data-field="${field}">
+              <option value="">Select Column</option>
+              ${headers.map((header, index) => `<option value="${index}">${header}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      });
+      
+      document.getElementById('patientColumnMapping').innerHTML = mappingHtml;
+      
+      document.getElementById('patientColumnMapping').addEventListener('change', updatePatientColumnMappings);
+      updatePatientColumnMappings();
+    }
+  }
+
+  function updatePatientColumnMappings() {
+    patientWizardData.columnMappings = {};
+    document.querySelectorAll('#patientColumnMapping .mapping-select').forEach(select => {
+      if (select.value) {
+        patientWizardData.columnMappings[select.dataset.field] = parseInt(select.value);
+      }
+    });
+    
+    if (Object.keys(patientWizardData.columnMappings).length > 0) {
+      showPatientMappingPreview();
+    }
+    updatePatientWizardButtons();
+  }
+
+  function validateRequiredMappings() {
+    const requiredFields = ['unique_id', 'phone', 'last_visited'];
+    const isValid = requiredFields.every(field => patientWizardData.columnMappings.hasOwnProperty(field));
+    console.log('🔍 Validation check:', {
+      mappings: patientWizardData.columnMappings,
+      requiredFields,
+      isValid,
+      mappedFields: Object.keys(patientWizardData.columnMappings)
+    });
+    return isValid;
+  }
+
+  function showPatientMappingPreview() {
+    if (!patientWizardData.excelData || Object.keys(patientWizardData.columnMappings).length === 0) return;
+    
+    // Define field order: required fields first, then recommended
+    const fieldOrder = ['unique_id', 'phone', 'last_visited', 'name', 'profile'];
+    const mappedFields = fieldOrder.filter(field => patientWizardData.columnMappings.hasOwnProperty(field));
+    
+    let previewHtml = '<table class="excel-table"><thead><tr>';
+    mappedFields.forEach(field => {
+      previewHtml += `<th>${field}</th>`;
+    });
+    previewHtml += '</tr></thead><tbody>';
+    
+    for (let i = patientWizardData.headerRowIndex; i < Math.min(patientWizardData.headerRowIndex + 10, patientWizardData.excelData.length); i++) {
+      previewHtml += '<tr>';
+      mappedFields.forEach(field => {
+        const colIndex = patientWizardData.columnMappings[field];
+        let cellValue = patientWizardData.excelData[i][colIndex] || '';
+        
+        // Convert Excel date numbers to readable dates for last_visited
+        if (field === 'last_visited' && cellValue && !isNaN(cellValue) && Number(cellValue) > 40000) {
+          try {
+            // Excel date conversion (Excel epoch starts 1900-01-01, but Excel incorrectly treats 1900 as leap year)
+            const excelDate = new Date((Number(cellValue) - 25569) * 86400 * 1000);
+            cellValue = excelDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+          } catch (e) {
+            // Keep original value if conversion fails
+          }
+        }
+        
+        previewHtml += `<td>${cellValue}</td>`;
+      });
+      previewHtml += '</tr>';
+    }
+    
+    previewHtml += '</tbody></table>';
+    document.getElementById('patientMappingPreview').innerHTML = previewHtml;
+  }
+
+  function showPatientStep4() {
+    let validationHtml = '';
+    let totalRows = patientWizardData.excelData.length - patientWizardData.headerRowIndex;
+    
+    validationHtml += `<div class="validation-item validation-success">✓ ${totalRows} rows detected</div>`;
+    validationHtml += `<div class="validation-item validation-success">✓ ${Object.keys(patientWizardData.columnMappings).length} columns mapped</div>`;
+    
+    // Check required fields
+    const requiredFields = ['unique_id', 'phone', 'last_visited'];
+    requiredFields.forEach(field => {
+      const isMapped = patientWizardData.columnMappings.hasOwnProperty(field);
+      const colIndex = patientWizardData.columnMappings[field];
+      console.log(`🔍 Field "${field}": isMapped=${isMapped}, colIndex=${colIndex}`);
+      
+      if (isMapped && colIndex !== undefined) {
+        validationHtml += `<div class="validation-item validation-success">✓ ${field} column mapped (required)</div>`;
+      } else {
+        validationHtml += `<div class="validation-item validation-error">✗ ${field} column required</div>`;
+      }
+    });
+    
+    // Check recommended fields
+    if (patientWizardData.columnMappings.name) {
+      validationHtml += `<div class="validation-item validation-success">✓ name column mapped (recommended)</div>`;
+    } else {
+      validationHtml += `<div class="validation-item validation-warning">⚠ name column recommended</div>`;
+    }
+    
+    if (patientWizardData.columnMappings.profile) {
+      validationHtml += `<div class="validation-item validation-success">✓ profile column mapped (recommended)</div>`;
+    } else {
+      validationHtml += `<div class="validation-item validation-warning">⚠ profile column recommended</div>`;
+    }
+    
+    // Data validation - check for empty required fields
+    requiredFields.forEach(field => {
+      if (patientWizardData.columnMappings[field] && patientWizardData.excelData.length > patientWizardData.headerRowIndex) {
+        const colIndex = patientWizardData.columnMappings[field];
+        let emptyValues = 0;
+        for (let i = patientWizardData.headerRowIndex; i < patientWizardData.excelData.length; i++) {
+          const fieldValue = patientWizardData.excelData[i][colIndex];
+          if (!fieldValue || fieldValue.toString().trim() === '') {
+            emptyValues++;
+          }
+        }
+        
+        if (emptyValues > 0) {
+          validationHtml += `<div class="validation-item validation-warning">⚠ ${emptyValues} rows have empty ${field} values</div>`;
+        } else {
+          validationHtml += `<div class="validation-item validation-success">✓ All ${field} values present</div>`;
+        }
+      }
+    });
+    
+    document.getElementById('patientValidationResults').innerHTML = validationHtml;
+    document.getElementById('patientFinalPreview').innerHTML = document.getElementById('patientMappingPreview').innerHTML;
+  }
+
+  async function confirmPatientImport() {
+    try {
+      // Double check validation before import
+      const requiredFields = ['unique_id', 'phone', 'last_visited'];
+      const missingFields = requiredFields.filter(field => !patientWizardData.columnMappings.hasOwnProperty(field));
+      
+      if (!patientWizardData.selectedFile) {
+        alert('Please select a file first.');
+        return;
+      }
+      
+      if (missingFields.length > 0) {
+        alert(`Please map all required columns: ${missingFields.join(', ')}`);
+        return;
+      }
+      
+      console.log('✅ All validations passed, proceeding with import...');
+
+      // Show loading overlay
+      showLoading('Processing customer import...', 'Analyzing Excel data');
+      
+      // Process the data and create customer records
+      const customers = [];
+      for (let i = patientWizardData.headerRowIndex; i < patientWizardData.excelData.length; i++) {
+        const row = patientWizardData.excelData[i];
+        
+        // Skip empty rows
+        if (!row || row.every(cell => !cell || cell.toString().trim() === '')) continue;
+        
+        // Helper function to convert Excel date numbers to YYYY-MM-DD format
+        function convertExcelDate(value) {
+          if (!value) return null;
+          
+          // If it's already a date string, return as is
+          if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+            return value.split('T')[0]; // Take only date part if datetime
+          }
+          
+          // If it's an Excel date number (typically > 40000 for recent dates)
+          if (!isNaN(value) && Number(value) > 40000) {
+            try {
+              // Excel date conversion (Excel epoch starts 1900-01-01, but Excel incorrectly treats 1900 as leap year)
+              const excelDate = new Date((Number(value) - 25569) * 86400 * 1000);
+              return excelDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+            } catch (e) {
+              return value.toString().trim();
+            }
+          }
+          
+          // Otherwise return as string
+          return value.toString().trim() || null;
+        }
+
+        // Get unique_id from Excel or generate one
+        let uniqueIdValue = '';
+        if (patientWizardData.columnMappings.hasOwnProperty('unique_id')) {
+          const colIndex = patientWizardData.columnMappings.unique_id;
+          const excelUniqueId = row[colIndex];
+          
+          console.log(`🔍 Row ${i} unique_id extraction:`, {
+            colIndex,
+            rawValue: excelUniqueId,
+            valueType: typeof excelUniqueId,
+            rowData: row
+          });
+          
+          if (excelUniqueId !== null && excelUniqueId !== undefined && excelUniqueId !== '') {
+            uniqueIdValue = excelUniqueId.toString().trim();
+          }
+        }
+        
+        // If no unique_id from Excel or it's empty, generate one
+        if (!uniqueIdValue) {
+          uniqueIdValue = `PAT-${Date.now()}-${Math.floor(Math.random() * 1000)}-${i}`;
+          console.log(`🆔 Generated unique ID: ${uniqueIdValue}`);
+        } else {
+          console.log(`📋 Using Excel unique ID: ${uniqueIdValue}`);
+        }
+
+        const customer = {
+          uniqueId: uniqueIdValue,
+          unique_id: uniqueIdValue, // Also set unique_id for database compatibility
+          name: patientWizardData.columnMappings.name ? (row[patientWizardData.columnMappings.name] || '').toString().trim() : '',
+          phone: patientWizardData.columnMappings.phone ? (row[patientWizardData.columnMappings.phone] || '').toString().trim() : '',
+          profile: patientWizardData.columnMappings.profile ? (row[patientWizardData.columnMappings.profile] || '').toString().trim() : null,
+          lastVisited: patientWizardData.columnMappings.last_visited ? convertExcelDate(row[patientWizardData.columnMappings.last_visited]) : null
+        };
+        
+        console.log(`✅ Final customer object:`, customer);
+        
+        // Skip rows without phone numbers
+        if (!customer.phone) continue;
+        
+        customers.push(customer);
+      }
+      
+      if (customers.length === 0) {
+        hideLoading();
+        alert('No valid customer records found. Please check your data.');
+        return;
+      }
+      
+      // Fast bulk import (same speed as original Excel import)
+      console.log('🚀 Sending customers to bulk import:', customers.length, 'customers');
+      console.log('📋 Sample customer data:', customers.length > 0 ? customers[0] : 'No customers');
+      
+      updateLoadingProgress('Importing customers to database...', `Processing ${customers.length} customers in bulk`);
+      
+      try {
+        const result = await ipcRenderer.invoke('bulk-import-patients', customers);
+        console.log('📥 Bulk import result:', result);
+        
+        // Hide loading and show results
+        hideLoading();
+        
+        if (result && result.success) {
+          showToast(`Successfully imported ${result.count} customers!`, 'success', 4000);
+          
+          // Refresh the customer list
+          await loadPatients();
+          
+          // Close the wizard
+          closePatientImportWizard();
+        } else {
+          showToast('Import failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        hideLoading();
+        console.error('Bulk import error:', error);
+        showToast('Import failed: ' + (error.message || error), 'error');
+      }
+      
+    } catch (error) {
+      hideLoading();
+      console.error('Import error:', error);
+      showToast('Import failed: ' + (error.message || error), 'error');
+    }
+  }
+
+  // Event Listeners for Patient Import Wizard
+  document.addEventListener('DOMContentLoaded', function() {
+    // Download sample button event listener
+    const downloadSampleBtn = document.getElementById('downloadSampleBtn');
+    if (downloadSampleBtn) {
+      downloadSampleBtn.addEventListener('click', downloadSampleTemplate);
+    }
+
+    // File drop zone events
+    const patientFileDropZone = document.getElementById('patientFileDropZone');
+    const patientHiddenInput = document.getElementById('patientHiddenInput');
+    
+    if (patientFileDropZone && patientHiddenInput) {
+      patientFileDropZone.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+          e.stopPropagation();
+          patientHiddenInput.click();
+        } else {
+          patientHiddenInput.click();
+        }
+      });
+      
+      patientFileDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        patientFileDropZone.classList.add('dragover');
+      });
+      
+      patientFileDropZone.addEventListener('dragleave', () => {
+        patientFileDropZone.classList.remove('dragover');
+      });
+      
+      patientFileDropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        patientFileDropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) handlePatientFileSelection(files[0]);
+      });
+
+      patientHiddenInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files.length > 0) handlePatientFileSelection(files[0]);
+      });
+    }
+  });
+
+  </script>
+
+  <!-- Excel support -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</body>
+</html>

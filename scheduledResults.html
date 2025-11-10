@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Scheduled Results</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .header h1 { margin: 0 0 10px 0; }
+    .controls { display: flex; gap: 10px; margin-bottom: 20px; }
+    .btn { padding: 8px 16px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; background: #fff; }
+    .btn:hover { background: #f5f5f5; }
+    .btn.primary { background: #007bff; color: white; border-color: #007bff; }
+    .btn.primary:hover { background: #0056b3; }
+    .btn.primary:disabled { background: #6c757d; border-color: #6c757d; cursor: not-allowed; }
+    .schedule { border: 1px solid #ddd; padding: 16px; margin-bottom: 16px; border-radius: 8px; background: #fff; }
+    .schedule-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 8px; border-radius: 4px; }
+    .schedule-header:hover { background: #f8f9fa; }
+    .schedule-header h3 { margin: 0; color: #2c3e50; }
+    .meta { color: #666; font-size: 0.9em; margin-top: 4px; }
+    .expand-btn { background: #e9ecef; border: 1px solid #ced4da; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 0.9em; }
+    .expand-btn:hover { background: #dee2e6; }
+    .expand-btn.expanded { background: #28a745; color: white; border-color: #28a745; }
+    .schedule-content { margin-top: 16px; }
+    .schedule-content.collapsed { display: none; }
+    .results-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .results-table th, .results-table td { border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; }
+    .results-table th { background: #f8f9fa; font-weight: 600; }
+    .actions { margin-top: 12px; display: flex; gap: 8px; }
+    .empty-state { text-align: center; padding: 40px; color: #6c757d; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Scheduled Results for Today</h1>
+      <p id="headerDescription">Profile-wise patient data (loading...)</p>
+    </div>
+
+    <div class="controls">
+      <button id="sendAllBtn" class="btn primary" onclick="sendAllSchedules()" disabled>Send All</button>
+      <button id="toggleAllBtn" class="btn" onclick="toggleAllSchedules()">Expand All</button>
+      <span id="sendAllInfo" style="margin-left: 15px; color: #666;"></span>
+    </div>
+
+    <div id="loadingMessage" class="loading">Loading profile data...</div>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let currentResults = [];
+    let templateSequence = null;
+    let todayProfileCounts = {};
+    let inProgressProfileCounts = {};
+  let pendingProfileCounts = {};
+
+    // Load template sequence configuration
+    async function loadTemplateSequence() {
+      try {
+        templateSequence = await ipcRenderer.invoke('get-active-template-sequence');
+        if (templateSequence) {
+          console.log('Template sequence loaded:', templateSequence.name, 'with', templateSequence.steps.length, 'steps');
+          console.log('Template order:', templateSequence.steps.map(s => s.templateName).join(' → '));
+        } else {
+          console.log('No template sequence found');
+        }
+      } catch (error) {
+        console.error('Error loading template sequence:', error);
+      }
+    }
+
+    // Determine next template from sequence for a patient
+    function getNextTemplateFromSequence(patient) {
+      if (!templateSequence || !templateSequence.steps || templateSequence.steps.length === 0) {
+        return 'No sequence'; // No sequence defined
+      }
+      
+      const lastTemplate = patient.last_template || '';
+      const lastScheduleDays = Number(patient.last_schedule_days) || 0;
+      
+      // Case 1: If last_schedule_days = 0 or last_template = 'welcome', start from sequence step 1
+      if (lastScheduleDays === 0 || lastTemplate.toLowerCase() === 'welcome') {
+        const firstStep = templateSequence.steps[0];
+        if (firstStep) {
+          return `${firstStep.templateName} (Step 1)`;
+        }
+      }
+      
+      // Case 2: Find current template in sequence and move to next
+      const currentStepIndex = templateSequence.steps.findIndex(step => 
+        step.templateName === lastTemplate
+      );
+      
+      if (currentStepIndex >= 0) {
+        // Found current template in sequence
+        const nextStepIndex = currentStepIndex + 1;
+        if (nextStepIndex < templateSequence.steps.length) {
+          // Move to next step in sequence
+          const nextStep = templateSequence.steps[nextStepIndex];
+          return `${nextStep.templateName} (Step ${nextStepIndex + 1})`;
+        } else {
+          // Reached end of sequence, loop back to first
+          const firstStep = templateSequence.steps[0];
+          return `${firstStep.templateName} (Step 1 - Loop)`;
+        }
+      } else {
+        // Current template not found in sequence, start from beginning
+        const firstStep = templateSequence.steps[0];
+        if (firstStep) {
+          return `${firstStep.templateName} (Step 1)`;
+        }
+      }
+      
+      return 'No template';
+    }
+
+    // Get the template name (without step info) to use for sending
+    function getTemplateNameForSending(patient) {
+      if (!templateSequence || !templateSequence.steps || templateSequence.steps.length === 0) {
+        return null; // No sequence defined
+      }
+      
+      const lastTemplate = patient.last_template || '';
+      const lastScheduleDays = Number(patient.last_schedule_days) || 0;
+      
+      // Case 1: If last_schedule_days = 0 or last_template = 'welcome', start from sequence step 1
+      if (lastScheduleDays === 0 || lastTemplate.toLowerCase() === 'welcome') {
+        const firstStep = templateSequence.steps[0];
+        return firstStep ? firstStep.templateName : null;
+      }
+      
+      // Case 2: Find current template in sequence and move to next
+      const currentStepIndex = templateSequence.steps.findIndex(step => 
+        step.templateName === lastTemplate
+      );
+      
+      if (currentStepIndex >= 0) {
+        // Found current template in sequence
+        const nextStepIndex = currentStepIndex + 1;
+        if (nextStepIndex < templateSequence.steps.length) {
+          // Move to next step in sequence
+          const nextStep = templateSequence.steps[nextStepIndex];
+          return nextStep.templateName;
+        } else {
+          // Reached end of sequence, loop back to first
+          const firstStep = templateSequence.steps[0];
+          return firstStep.templateName;
+        }
+      } else {
+        // Current template not found in sequence, start from beginning
+        const firstStep = templateSequence.steps[0];
+        return firstStep ? firstStep.templateName : null;
+      }
+    }
+
+    async function loadProfileData() {
+      const loadingEl = document.getElementById('loadingMessage');
+      const resultsEl = document.getElementById('results');
+      
+      try {
+        loadingEl.style.display = 'block';
+        resultsEl.innerHTML = '';
+        
+        // Load template sequence first
+        await loadTemplateSequence();
+        
+        // Get settings to determine limit per profile and min wait period
+        const settings = await ipcRenderer.invoke('get-settings') || {};
+        const limitPerProfile = settings.defaultMessageLimitPerProfile || 500;
+        const minWaitPeriodDays = settings.minWaitPeriodDays || 7; // Default 7 days if not set
+        console.log('Using limit per profile:', limitPerProfile);
+        console.log('Using min wait period (days):', minWaitPeriodDays);
+        
+        // Get today's message counts per profile
+        try {
+          todayProfileCounts = await ipcRenderer.invoke('get-today-profile-counts') || {};
+          console.log('Today\'s profile counts:', todayProfileCounts);
+        } catch (e) {
+          console.warn('Could not get today\'s profile counts (app may need restart):', e.message);
+          // Fallback: try to get from daily stats
+          try {
+            const dailyStats = await ipcRenderer.invoke('get-daily-stats', 1) || [];
+            if (dailyStats.length > 0 && dailyStats[0].data && dailyStats[0].data.perProfile) {
+              todayProfileCounts = dailyStats[0].data.perProfile;
+              console.log('Fallback: Got today\'s counts from daily stats:', todayProfileCounts);
+            }
+          } catch (fallbackError) {
+            console.warn('Fallback also failed, using empty counts:', fallbackError.message);
+            todayProfileCounts = {};
+          }
+        }
+        
+        // Get in-progress message counts per profile
+        try {
+          inProgressProfileCounts = await ipcRenderer.invoke('get-inprogress-profile-counts') || {};
+          console.log('In-progress profile counts:', inProgressProfileCounts);
+        } catch (e) {
+          console.warn('Could not get in-progress profile counts:', e.message);
+          inProgressProfileCounts = {};
+        }
+        // Get pending (scheduled) counts per profile from reports so they count against limits
+        try {
+          const allReports = await ipcRenderer.invoke('get-reports') || [];
+          pendingProfileCounts = {};
+          for (const rep of allReports) {
+            const status = (rep.status || '').toString().toLowerCase();
+            // Treat scheduled jobs as pending; include only jobs that haven't completed
+            if (status === 'scheduled' || status === 'in_progress' || status === 'in progress' || status === 'paused') {
+              const profiles = Array.isArray(rep.profiles) ? rep.profiles : (rep.profiles ? [rep.profiles] : []);
+              // Calculate remaining recipients for the job (pending recipients)
+              const pendingForJob = (Number(rep.record_total || 0) - Number(rep.record_sent || 0) - Number(rep.record_failed || 0)) || 0;
+              for (const pf of profiles) {
+                if (!pf) continue;
+                pendingProfileCounts[pf] = (pendingProfileCounts[pf] || 0) + pendingForJob;
+              }
+            }
+          }
+          console.log('Pending profile counts (from reports):', pendingProfileCounts);
+        } catch (e) {
+          console.warn('Could not compute pending profile counts from reports:', e.message);
+          pendingProfileCounts = {};
+        }
+        
+        // Get all patients from database
+        const patients = await ipcRenderer.invoke('get-all-patients') || [];
+        console.log('Loaded patients:', patients.length);
+        
+        // Get all profiles
+        const profiles = await ipcRenderer.invoke('get-profiles') || [];
+        console.log('Loaded profiles:', profiles.length);
+        
+        // Get active clients (logged in profiles)
+        const activeClientsInfo = await ipcRenderer.invoke('get-active-clients') || { clients: [] };
+        const activeProfileNames = activeClientsInfo.clients.map(c => c.name);
+        console.log('Active profiles:', activeProfileNames.length, activeProfileNames);
+        
+        // Update header description with actual limit and wait period
+        const totalUsedToday = Object.values(todayProfileCounts).reduce((sum, count) => sum + count, 0);
+        document.getElementById('headerDescription').textContent = 
+          `Profile-wise patient data (Daily limit: ${limitPerProfile} per profile, Used today: ${totalUsedToday} total, Min wait: ${minWaitPeriodDays}d) | Active profiles: ${activeProfileNames.length}`;
+        
+        if (activeProfileNames.length === 0) {
+          loadingEl.innerHTML = '❌ No active profiles found. Please login to profiles first.';
+          return;
+        }
+        
+        // Calculate today's date for gap calculation
+        const today = new Date();
+        
+        // Group patients by profile and get limited number per profile (filtered and sorted by oldest Last_Msgsent_date)
+        const profileGroups = {};
+        
+        // Group patients by profile (exclude DND patients and those within min wait period)
+        patients.forEach(patient => {
+          // Skip DND patients
+          if (patient.Is_DND === 1 || patient.Is_DND === '1') {
+            return;
+          }
+          
+          const profileName = patient.profile || 'No Profile';
+          
+          // Skip patients from inactive profiles
+          if (!activeProfileNames.includes(profileName)) {
+            console.log(`Patient ${patient.name} (${patient.phone}) skipped: Profile "${profileName}" is not active/logged in`);
+            return;
+          }
+          
+          // Check min wait period gap if patient has a last message date
+          if (patient.Last_Msgsent_date && patient.Last_Msgsent_date !== 'null' && patient.Last_Msgsent_date !== '') {
+            // Skip wait period check if last template was 'welcome'
+            const lastTemplate = patient.last_template || patient.lastTemplate || '';
+            if (lastTemplate.toLowerCase() === 'welcome') {
+              console.log(`Patient ${patient.name} (${patient.phone}) eligible: Last template was 'welcome' - skipping wait period check`);
+            } else {
+              try {
+                const lastMsgDate = new Date(patient.Last_Msgsent_date);
+                if (!isNaN(lastMsgDate.getTime())) {
+                  const daysSinceLastMsg = Math.floor((today - lastMsgDate) / (1000 * 60 * 60 * 24));
+                  
+                  // Skip patients who haven't waited long enough since last message
+                  if (daysSinceLastMsg < minWaitPeriodDays) {
+                    console.log(`Patient ${patient.name} (${patient.phone}) skipped: Last message ${daysSinceLastMsg} days ago, min wait ${minWaitPeriodDays} days`);
+                    return;
+                  }
+                }
+              } catch (e) {
+                // If date parsing fails, proceed with patient (treat as no previous message)
+                console.warn(`Date parsing failed for patient ${patient.name}:`, e.message);
+              }
+            }
+          }
+          
+          if (!profileGroups[profileName]) {
+            profileGroups[profileName] = [];
+          }
+          
+          profileGroups[profileName].push(patient);
+        });
+        
+        // Sort each profile's patients by Last_Msgsent_date asc (oldest first - highest days since message)
+        const results = [];
+        let totalFilteredOut = 0;
+        
+        Object.keys(profileGroups).forEach(profileName => {
+          const profilePatients = profileGroups[profileName];
+          
+          // Sort by Last_Msgsent_date asc (oldest first - this gives highest number of days)
+          profilePatients.sort((a, b) => {
+            const dateA = a.Last_Msgsent_date ? new Date(a.Last_Msgsent_date) : new Date(0);
+            const dateB = b.Last_Msgsent_date ? new Date(b.Last_Msgsent_date) : new Date(0);
+            return dateA - dateB;  // Changed from dateB - dateA to get oldest first
+          });
+          
+          // Calculate remaining limit for this profile FIRST
+          const todayUsed = todayProfileCounts[profileName] || 0;
+          const inProgressCount = inProgressProfileCounts[profileName] || 0;
+          const pendingCount = pendingProfileCounts[profileName] || 0;
+          const totalUsed = todayUsed + inProgressCount + pendingCount;
+          const remainingLimit = Math.max(0, limitPerProfile - totalUsed);
+          
+          // Take only the remaining available limit (not the total configured limit)
+          const actualLimit = Math.min(remainingLimit, profilePatients.length);
+          const limitedPatients = profilePatients.slice(0, actualLimit);
+          const extraPatients = profilePatients.length - limitedPatients.length;
+          totalFilteredOut += extraPatients;
+          
+          if (limitedPatients.length > 0) {
+            
+            results.push({
+              profileName: profileName,
+              templateName: 'Profile Data',
+              patients: limitedPatients,
+              totalPatients: profilePatients.length,
+              limitUsed: limitPerProfile,
+              todayUsed: todayUsed,
+              inProgressCount: inProgressCount,
+              totalUsed: totalUsed,
+              remainingLimit: remainingLimit,
+              minWaitPeriod: minWaitPeriodDays
+            });
+          }
+        });
+        
+        console.log(`Filtered ${patients.length} total patients → ${results.reduce((sum, r) => sum + r.patients.length, 0)} eligible (${totalFilteredOut} excluded by limits, others by DND/wait period/inactive profiles)`);
+        console.log(`Only showing patients from ${results.length} active profiles: ${results.map(r => r.profileName).join(', ')}`);
+        
+        currentResults = results;
+        loadingEl.style.display = 'none';
+        
+        // Pass context about why there might be no results
+        const contextInfo = {
+          totalPatients: patients.length,
+          totalFilteredByLimits: totalFilteredOut,
+          activeProfiles: Object.keys(profileGroups).length,
+          hasActiveClients: activeProfileNames.length > 0
+        };
+        renderResults(currentResults, contextInfo);
+        
+      } catch (error) {
+        console.error('Error loading profile data:', error);
+        loadingEl.innerHTML = '❌ Error loading data: ' + error.message;
+      }
+    }
+
+    function renderResults(scheduleResults, contextInfo = {}) {
+      const resultsDiv = document.getElementById('results');
+      const sendAllBtn = document.getElementById('sendAllBtn');
+      const sendAllInfo = document.getElementById('sendAllInfo');
+      
+      if (!scheduleResults || scheduleResults.length === 0) {
+        // Determine the specific reason for no results
+        const { totalPatients = 0, totalFilteredByLimits = 0, activeProfiles = 0, hasActiveClients = false } = contextInfo;
+        
+        if (totalFilteredByLimits > 0 || (activeProfiles > 0 && hasActiveClients)) {
+          // Case 1: Limits reached - there were patients but they were filtered out by daily limits
+          resultsDiv.innerHTML = '<div class="schedule"><h2 style="color: #ff6b35; text-align: center; font-size: 24px; margin: 40px 0;">📊 LIMIT REACHED</h2><p style="text-align: center; color: #666;">All profiles have reached their daily message limits. Try again tomorrow.</p></div>';
+          sendAllBtn.disabled = true;
+          sendAllBtn.textContent = 'Limit Reached';
+          sendAllInfo.textContent = `${totalFilteredByLimits} patients excluded by daily limits`;
+        } else {
+          // Case 2: No schedule available - no patients or no active profiles
+          resultsDiv.innerHTML = '<div class="schedule"><h2 style="color: #6c757d; text-align: center; font-size: 24px; margin: 40px 0;">📋 NO SCHEDULE AVAILABLE</h2><p style="text-align: center; color: #666;">No eligible patients found or no active profiles logged in.</p></div>';
+          sendAllBtn.disabled = true;
+          sendAllBtn.textContent = 'No Schedule';
+          sendAllInfo.textContent = hasActiveClients ? 'No eligible patients' : 'No active profiles';
+        }
+        return;
+      }
+
+      let totalPatients = 0;
+      let totalActivePatients = 0;
+      
+      const html = scheduleResults.map((schedule, index) => {
+        const scheduleId = `schedule-${index}`;
+        // All patients are already non-DND (filtered during data loading)
+        const activePatients = schedule.patients;
+        totalPatients += schedule.patients.length;
+        totalActivePatients += activePatients.length;
+        
+        const patientsHtml = schedule.patients.length === 0 ? 
+          '<p>No patients for this profile.</p>' : 
+          `<table class="results-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Last Visited</th>
+                <th>Last Message</th>
+                <th>Last Template</th>
+                <th>Last Step</th>
+                <th>Next Template</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${schedule.patients.map(p => {
+                const nextTemplate = getNextTemplateFromSequence(p);
+                return `<tr>
+                  <td>${p.name}</td>
+                  <td>${p.phone}</td>
+                  <td>${formatRelativeDate(p.last_visited)}</td>
+                  <td>${formatRelativeDate(p.Last_Msgsent_date)}</td>
+                  <td>${p.last_template || '-'}</td>
+                  <td style="color: #007bff; font-weight: 500;">${p.last_schedule_days || 0}</td>
+                  <td style="color: #28a745; font-weight: 500;">${nextTemplate}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>`;
+
+        return `
+          <div class="schedule">
+            <div class="schedule-header" onclick="toggleSchedule('${scheduleId}')">
+              <div>
+                <h3 style="margin:0">${schedule.profileName} <span style="color: #28a745; font-size: 0.8em;">● ACTIVE</span></h3>
+                <div class="meta">
+                  Patients: ${schedule.patients.length} eligible shown 
+                  ${schedule.totalPatients > schedule.patients.length ? `| Total in profile: ${schedule.totalPatients}` : ''}
+                  | <span style="color: ${schedule.remainingLimit <= 10 ? '#dc3545' : '#28a745'}; font-weight: 600;">Available: ${schedule.remainingLimit}</span>
+                  | Used today: ${schedule.todayUsed}${(schedule.inProgressCount > 0 || pendingProfileCounts[schedule.profileName] > 0) ? ` + ${schedule.inProgressCount || 0} in-progress${pendingProfileCounts[schedule.profileName] ? ` + ${pendingProfileCounts[schedule.profileName]} pending` : ''}` : ''} | Min wait: ${schedule.minWaitPeriod || 7}d
+                </div>
+              </div>
+              <div class="expand-btn" id="btn-${scheduleId}">▶ Expand</div>
+            </div>
+            <div class="schedule-content collapsed" id="content-${scheduleId}">
+              <div class="actions">
+                <button class="btn primary" onclick="sendSchedule('${index}')" ${activePatients.length === 0 ? 'disabled' : ''}>
+                  📤 Send to ${activePatients.length} patients
+                </button>
+                <button class="btn" onclick="exportSchedule('${index}')">📊 Export</button>
+              </div>
+              ${patientsHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      resultsDiv.innerHTML = html;
+      
+      // Update send all button
+      if (totalActivePatients > 0) {
+        sendAllBtn.disabled = false;
+        sendAllBtn.textContent = `📤 Send All (${totalActivePatients} patients)`;
+        sendAllInfo.textContent = `${scheduleResults.length} profiles, ${totalPatients} total patients`;
+      } else {
+        sendAllBtn.disabled = true;
+        sendAllBtn.textContent = 'No Active Patients';
+        sendAllInfo.textContent = `${scheduleResults.length} profiles, all patients are DND`;
+      }
+    }
+
+    function toggleSchedule(scheduleId) {
+      const content = document.getElementById(`content-${scheduleId}`);
+      const button = document.getElementById(`btn-${scheduleId}`);
+      
+      if (content.classList.contains('collapsed')) {
+        content.classList.remove('collapsed');
+        button.textContent = '▼ Collapse';
+        button.classList.add('expanded');
+      } else {
+        content.classList.add('collapsed');
+        button.textContent = '▶ Expand';
+        button.classList.remove('expanded');
+      }
+    }
+
+    function toggleAllSchedules() {
+      const allContents = document.querySelectorAll('.schedule-content');
+      const allButtons = document.querySelectorAll('.expand-btn');
+      const toggleBtn = document.getElementById('toggleAllBtn');
+      
+      const isAnyExpanded = Array.from(allContents).some(content => !content.classList.contains('collapsed'));
+      
+      if (isAnyExpanded) {
+        // Collapse all
+        allContents.forEach(content => content.classList.add('collapsed'));
+        allButtons.forEach(button => {
+          button.textContent = '▶ Expand';
+          button.classList.remove('expanded');
+        });
+        toggleBtn.textContent = 'Expand All';
+      } else {
+        // Expand all
+        allContents.forEach(content => content.classList.remove('collapsed'));
+        allButtons.forEach(button => {
+          button.textContent = '▼ Collapse';
+          button.classList.add('expanded');
+        });
+        toggleBtn.textContent = 'Collapse All';
+      }
+    }
+
+    async function sendSchedule(scheduleIndex) {
+      if (scheduleIndex < 0 || scheduleIndex >= currentResults.length) return;
+      
+      const schedule = currentResults[scheduleIndex];
+      const activePatients = schedule.patients.filter(p => !(p.Is_DND === 1 || p.Is_DND === '1'));
+      
+      if (activePatients.length === 0) {
+        alert('No active patients to send messages to.');
+        return;
+      }
+      
+      const confirmed = confirm(`Send template sequence messages to ${activePatients.length} patients in profile "${schedule.profileName}"?\n\nEach patient will receive their next template from the sequence.`);
+      if (!confirmed) return;
+      
+      try {
+        console.log('Sending to profile with sequence:', {
+          profileName: schedule.profileName,
+          patientCount: activePatients.length
+        });
+        
+        const sendButton = event.target;
+        sendButton.disabled = true;
+        sendButton.textContent = 'Sending...';
+        
+        // Listen for responses
+        const responseHandler = (event, response) => {
+          if (response.success) {
+            console.log('Job started:', response.jobId);
+          } else {
+            alert('Error starting job: ' + response.error);
+            sendButton.disabled = false;
+            sendButton.textContent = `📤 Send to ${activePatients.length} patients`;
+          }
+        };
+        
+        const progressHandler = (event, progress) => {
+          console.log('Progress:', progress);
+          sendButton.textContent = `Sending... ${progress.sent}/${progress.total}`;
+        };
+        
+        const finishHandler = (event, result) => {
+          console.log('Finished:', result);
+          alert(`Completed!\nSent: ${result.sent}\nFailed: ${result.failed}\nTotal: ${result.total}`);
+          sendButton.disabled = false;
+          sendButton.textContent = `📤 Send to ${activePatients.length} patients`;
+          
+          // Cleanup listeners
+          ipcRenderer.removeListener('profile-message-response', responseHandler);
+          ipcRenderer.removeListener('profile-message-progress', progressHandler);
+          ipcRenderer.removeListener('profile-message-finished', finishHandler);
+          
+          // Reload data to show updated next templates
+          loadProfileData();
+        };
+        
+        ipcRenderer.once('profile-message-response', responseHandler);
+        ipcRenderer.on('profile-message-progress', progressHandler);
+        ipcRenderer.once('profile-message-finished', finishHandler);
+        
+        // Send using new handler with template sequence logic
+        ipcRenderer.send('send-profile-messages-with-sequence', {
+          profileName: schedule.profileName,
+          patients: activePatients
+        });
+        
+      } catch (error) {
+        console.error('Error sending to profile:', error);
+        alert('Error sending messages: ' + error.message);
+      }
+    }
+
+    async function sendAllSchedules() {
+      const allActivePatients = [];
+      const profileDetails = [];
+      
+      currentResults.forEach(schedule => {
+        const activePatients = schedule.patients.filter(p => !(p.Is_DND === 1 || p.Is_DND === '1'));
+        if (activePatients.length > 0) {
+          allActivePatients.push(...activePatients);
+          profileDetails.push({
+            profileName: schedule.profileName,
+            patients: activePatients
+          });
+        }
+      });
+      
+      if (allActivePatients.length === 0) {
+        alert('No active patients to send messages to.');
+        return;
+      }
+      
+      const confirmed = confirm(`Send template sequence messages to ${allActivePatients.length} patients across ${profileDetails.length} profiles SIMULTANEOUSLY?\n\nAll profiles will start sending at the same time for faster processing.\n\nEach patient will receive their next template from the sequence.`);
+      if (!confirmed) return;
+      
+      try {
+        console.log('Starting parallel sending across all profiles:', {
+          profileCount: profileDetails.length,
+          totalPatients: allActivePatients.length,
+          profiles: profileDetails.map(p => `${p.profileName} (${p.patients.length} patients)`)
+        });
+        
+        const sendAllBtn = document.getElementById('sendAllBtn');
+        sendAllBtn.disabled = true;
+        sendAllBtn.textContent = 'Starting all profiles...';
+        
+        let totalSent = 0;
+        let totalFailed = 0;
+        let profilesCompleted = 0;
+        
+        // Create promises for all profiles to run in parallel
+        const profilePromises = profileDetails.map(async (profile) => {
+          return new Promise(async (resolve) => {
+            try {
+              console.log(`🚀 Starting profile: ${profile.profileName} with ${profile.patients.length} patients`);
+              
+              const responsePromise = new Promise((resolveResponse, rejectResponse) => {
+                const responseHandler = (event, response) => {
+                  if (response.success) {
+                    console.log(`✅ Job started for ${profile.profileName}:`, response.jobId);
+                    resolveResponse();
+                  } else {
+                    rejectResponse(new Error(response.error));
+                  }
+                };
+                ipcRenderer.once('profile-message-response', responseHandler);
+              });
+              
+              const finishPromise = new Promise((resolveFinish) => {
+                const finishHandler = (event, result) => {
+                  console.log(`🏁 Finished ${profile.profileName}:`, result);
+                  totalSent += result.sent;
+                  totalFailed += result.failed;
+                  profilesCompleted++;
+                  sendAllBtn.textContent = `Sending... (${profilesCompleted}/${profileDetails.length} profiles completed)`;
+                  resolveFinish(result);
+                };
+                ipcRenderer.once('profile-message-finished', finishHandler);
+              });
+              
+              // Send to this profile
+              ipcRenderer.send('send-profile-messages-with-sequence', {
+                profileName: profile.profileName,
+                patients: profile.patients
+              });
+              
+              await responsePromise;
+              const result = await finishPromise;
+              resolve({
+                profileName: profile.profileName,
+                sent: result.sent,
+                failed: result.failed,
+                total: result.total
+              });
+              
+            } catch (error) {
+              console.error(`❌ Error with profile ${profile.profileName}:`, error);
+              totalFailed += profile.patients.length;
+              profilesCompleted++;
+              sendAllBtn.textContent = `Sending... (${profilesCompleted}/${profileDetails.length} profiles - 1 error)`;
+              resolve({
+                profileName: profile.profileName,
+                sent: 0,
+                failed: profile.patients.length,
+                total: profile.patients.length,
+                error: error.message
+              });
+            }
+          });
+        });
+        
+        // Wait for all profiles to complete (parallel execution)
+        console.log('⏳ Waiting for all profiles to complete...');
+        const results = await Promise.all(profilePromises);
+        
+        // Calculate final totals
+        const finalSent = results.reduce((sum, r) => sum + r.sent, 0);
+        const finalFailed = results.reduce((sum, r) => sum + r.failed, 0);
+        const finalTotal = results.reduce((sum, r) => sum + r.total, 0);
+        
+        // Show detailed results
+        const resultSummary = results.map(r => 
+          `${r.profileName}: ✅${r.sent} ❌${r.failed}${r.error ? ` (Error: ${r.error})` : ''}`
+        ).join('\n');
+        
+        alert(`🎉 All Profiles Completed Simultaneously!\n\n📊 SUMMARY:\nTotal Sent: ${finalSent}\nTotal Failed: ${finalFailed}\nTotal Patients: ${finalTotal}\nProfiles: ${profilesCompleted}/${profileDetails.length}\n\n📋 PROFILE DETAILS:\n${resultSummary}`);
+        
+        sendAllBtn.disabled = false;
+        sendAllBtn.textContent = `📤 Send All (${allActivePatients.length} patients)`;
+        
+        // Reload data to show updated next templates
+        loadProfileData();
+        
+      } catch (error) {
+        console.error('Error in parallel sending:', error);
+        alert('Error sending messages: ' + error.message);
+        
+        const sendAllBtn = document.getElementById('sendAllBtn');
+        sendAllBtn.disabled = false;
+        sendAllBtn.textContent = `📤 Send All (${allActivePatients.length} patients)`;
+      }
+    }
+
+    function exportSchedule(scheduleIndex) {
+      if (scheduleIndex < 0 || scheduleIndex >= currentResults.length) return;
+      
+      const schedule = currentResults[scheduleIndex];
+      
+      try {
+        // Convert profile data to CSV
+        const csvHeader = 'Name,Phone,Last Visited,Last Message,Last Template,Last Step,Next Template\n';
+        const csvRows = schedule.patients.map(p => {
+          const nextTemplate = getNextTemplateFromSequence(p);
+          return [
+            p.name || '',
+            p.phone || '',
+            p.last_visited || '',
+            p.Last_Msgsent_date || '',
+            p.last_template || '',
+            p.last_schedule_days || 0,
+            nextTemplate || ''
+          ].map(field => `"${field}"`).join(',');
+        }).join('\n');
+        
+        const csvContent = csvHeader + csvRows;
+        
+        // Create and download file
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `profile-${schedule.profileName}-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert('Export failed: ' + error.message);
+      }
+    }
+
+    function formatRelativeDate(dateStr) {
+      if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return 'Never';
+      
+      try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr; // Return original if invalid
+        
+        const now = new Date();
+        const diffTime = now - date;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return '1 day ago';
+        if (diffDays < 0) return `${Math.abs(diffDays)} days ahead`; // Future date
+        return `${diffDays} days ago`;
+      } catch (e) {
+        return dateStr; // Return original if error
+      }
+    }
+
+    // Initialize the page
+    loadProfileData();
+  </script>
+</body>
+</html>

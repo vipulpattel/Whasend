@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Profile-wise Patients</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .profile-card { 
+      border: 1px solid #ddd; 
+      padding: 16px; 
+      margin-bottom: 16px; 
+      border-radius: 8px; 
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .profile-header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 6px;
+      transition: background-color 0.2s;
+    }
+    .profile-header:hover { background-color: #f8f9fa; }
+    .profile-name { font-size: 18px; font-weight: bold; color: #2563eb; }
+    .profile-stats { color: #666; font-size: 14px; }
+    .expand-btn { 
+      background: #e2e8f0; 
+      border: 1px solid #cbd5e1; 
+      border-radius: 4px; 
+      padding: 6px 12px; 
+      cursor: pointer; 
+      font-size: 12px;
+      user-select: none;
+      transition: all 0.2s;
+    }
+    .expand-btn:hover { background: #cbd5e1; }
+    .expand-btn.expanded { background: #3b82f6; color: white; border-color: #3b82f6; }
+    .profile-content { margin-top: 12px; }
+    .profile-content.collapsed { display: none; }
+    table.patients-table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-top: 12px;
+      background: white;
+    }
+    table.patients-table th, table.patients-table td { 
+      border: 1px solid #e5e7eb; 
+      padding: 10px 12px; 
+      text-align: left;
+    }
+    table.patients-table thead th { 
+      background: #f9fafb; 
+      font-weight: 600;
+      color: #374151;
+    }
+    .actions { margin-top: 12px; display: flex; gap: 8px; }
+    .btn { 
+      padding: 8px 16px; 
+      cursor: pointer; 
+      border-radius: 6px; 
+      border: 1px solid #cbd5e1; 
+      background: #fff;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #f8fafc; }
+    .btn.primary { background: #2563eb; color: #fff; border-color: transparent; }
+    .btn.primary:hover { background: #1d4ed8; }
+    .btn.success { background: #059669; color: #fff; border-color: transparent; }
+    .btn.success:hover { background: #047857; }
+    .empty-state { 
+      text-align: center; 
+      padding: 40px; 
+      color: #6b7280; 
+      background: white; 
+      border-radius: 8px;
+    }
+    .loading { text-align: center; padding: 20px; color: #6b7280; }
+    .patient-status { 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      font-size: 12px; 
+      font-weight: 500;
+    }
+    .status-active { background: #d1fae5; color: #065f46; }
+    .status-dnd { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Profile-wise Patients</h1>
+      <p>View all patients organized by their assigned profiles</p>
+      <div class="actions">
+        <button class="btn" onclick="refreshData()">🔄 Refresh</button>
+        <button class="btn primary" onclick="exportData()">📊 Export</button>
+      </div>
+    </div>
+
+    <div id="loadingMessage" class="loading">Loading profile data...</div>
+    <div id="profilesContainer"></div>
+  </div>
+  </style>
+</head>
+<body>
+  <h2>Scheduled Results</h2>
+  <div style="margin:8px 0 12px; display:flex; gap:8px; align-items:center">
+    <button id="sendAllBtn" class="btn primary" onclick="sendAllSchedules()">Send All</button>
+    <button id="toggleAllBtn" class="btn" onclick="toggleAllSchedules()">Collapse All</button>
+    <div id="sendAllInfo" class="meta"></div>
+  </div>
+  <div id="results"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let currentResults = [];
+    ipcRenderer.on('scheduled-results-data', (event, results) => {
+      currentResults = Array.isArray(results) ? results : [];
+      // Fetch profiles to resolve names for display then render
+      (async () => {
+        let profileMap = new Map();
+        try {
+          const profiles = await ipcRenderer.invoke('get-profiles');
+          for (const p of (profiles || [])) {
+            try { if (p && p.name) profileMap.set(String(p.name), p.name); } catch (e) {}
+          }
+        } catch (e) { /* ignore */ }
+        renderResults(currentResults, profileMap);
+      })();
+    });
+
+    // renderResults: uses profileMap to resolve profile display names
+    function renderResults(results, profileMap) {
+      const container = document.getElementById('results');
+      container.innerHTML = '';
+
+      if (!results || results.length === 0) {
+        container.innerHTML = '<p>No schedules found or no matching patients.</p>';
+        return;
+      }
+
+      results.forEach((s, index) => {
+        const div = document.createElement('div');
+        div.className = 'schedule';
+
+        // Create collapsible header
+        const header = document.createElement('div');
+        header.className = 'schedule-header';
+        
+        const headerContent = document.createElement('div');
+        headerContent.innerHTML = `<strong>${s.schedule}</strong>`;
+        
+        const expandBtn = document.createElement('div');
+        expandBtn.className = 'expand-btn expanded';
+        expandBtn.textContent = '▼ Hide Table';
+        expandBtn.setAttribute('data-schedule-index', index);
+        
+        header.appendChild(headerContent);
+        header.appendChild(expandBtn);
+        div.appendChild(header);
+
+        // Schedule details
+        const sub = document.createElement('div');
+        sub.className = 'meta';
+        // Resolve profiles
+        let profileDisplay = 'All';
+        if (s.profiles && s.profiles.length) {
+          try {
+            profileDisplay = s.profiles.map(p => {
+              if (!p) return '';
+              if (typeof p === 'string') return profileMap.get(p) || p;
+              if (typeof p === 'object') return p.name || p.toString();
+              return String(p);
+            }).filter(Boolean).join(', ');
+          } catch (e) { profileDisplay = (s.profiles || []).join(', '); }
+        }
+        // Calculate patient count for display (considering if results were limited)
+        const originalPatientCount = s.originalCount || (s.patients || []).length;
+        const currentPatientCount = (s.patients || []).length;
+        
+        let patientCountText = `Matched patients: ${currentPatientCount}`;
+        if (s.originalCount && s.originalCount > currentPatientCount) {
+          patientCountText = `Matched patients: ${currentPatientCount} of ${originalPatientCount} (limited)`;
+        }
+        
+        sub.textContent = `Template: ${s.templateName || '(none)'} — Days: ${s.days} — Profiles: ${profileDisplay} — ${patientCountText}`;
+        
+        // Create collapsible content container
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'schedule-content';
+        contentDiv.setAttribute('data-schedule-index', index);
+        
+        contentDiv.appendChild(sub);
+
+        // Actions (export)
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'btn';
+        exportBtn.textContent = 'Export CSV';
+        exportBtn.onclick = () => exportScheduleCSV(s);
+        actions.appendChild(exportBtn);
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'btn primary';
+        sendBtn.textContent = 'Send';
+        sendBtn.onclick = () => sendScheduleNow(s, sendBtn);
+        actions.appendChild(sendBtn);
+        contentDiv.appendChild(actions);
+
+        // Table: Customer Name | Phone No | Profile | Template | Last Visit | Last Msg Sent | Last Template
+        const table = document.createElement('table');
+        table.className = 'results-table';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr><th>Customer Name</th><th>Phone No</th><th>Profile</th><th>Template</th><th>Last Visit</th><th>Last Msg Sent</th><th>Last Template</th></tr>`;
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+
+        if (!s.patients || s.patients.length === 0) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td colspan="7" class="meta">No matched patients for this schedule.</td>`;
+          tbody.appendChild(tr);
+        } else {
+          // Data is already sorted by last message sent date ASC (oldest first) and limited to 500 in the backend
+          s.patients.forEach(p => {
+            const tr = document.createElement('tr');
+            const tpl = s.templateName || '';
+            const phone = p.phone || '';
+            const name = p.name || '';
+            // Resolve patient-saved profile (field may be named differently)
+            const rawProfile = p.profile || p.Profile || p.assigned_profile || p.assignedProfile || '';
+            const profileDisplay = profileMap && rawProfile ? (profileMap.get(String(rawProfile)) || String(rawProfile)) : rawProfile || '';
+            // last message sent date may come in different field names depending on source
+            const lastMsg = p.Last_Msgsent_date || p.last_msgsent_date || p.lastMsgsentDate || p.last_msg_sent || p.last_msg || '';
+            const lastVisit = p.last_visited || p.lastVisited || p.Last_Visited || '';
+            const lastTemplate = p.last_template || p.lastTemplate || p.last_template_name || '';
+            
+            // Convert dates to "X days ago" format
+            const lastMsgDisplay = getDaysAgo(lastMsg);
+            const lastVisitDisplay = getDaysAgo(lastVisit);
+            
+            tr.innerHTML = `<td>${escapeHtml(name)}</td><td>${escapeHtml(phone)}</td><td>${escapeHtml(profileDisplay)}</td><td>${escapeHtml(tpl)}</td><td>${escapeHtml(lastVisitDisplay)}</td><td>${escapeHtml(lastMsgDisplay)}</td><td>${escapeHtml(lastTemplate)}</td>`;
+            tbody.appendChild(tr);
+          });
+        }
+
+        table.appendChild(tbody);
+        contentDiv.appendChild(table);
+        
+        // Add content div to main div, then add expand/collapse functionality
+        div.appendChild(contentDiv);
+        
+        // Add click handler for expand/collapse
+        expandBtn.onclick = (e) => {
+          e.stopPropagation();
+          toggleSchedule(index);
+        };
+        
+        // store schedule id/name for UI updates
+        try { div.dataset.scheduleName = s.schedule || ''; } catch (e) {}
+        container.appendChild(div);
+      });
+    }
+
+    // Toggle schedule visibility
+    function toggleSchedule(scheduleIndex) {
+      const contentDiv = document.querySelector(`[data-schedule-index="${scheduleIndex}"].schedule-content`);
+      const expandBtn = document.querySelector(`[data-schedule-index="${scheduleIndex}"].expand-btn`);
+      
+      if (contentDiv && expandBtn) {
+        const isCollapsed = contentDiv.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+          // Expand
+          contentDiv.classList.remove('collapsed');
+          expandBtn.classList.add('expanded');
+          expandBtn.textContent = '▼ Hide Table';
+        } else {
+          // Collapse
+          contentDiv.classList.add('collapsed');
+          expandBtn.classList.remove('expanded');
+          expandBtn.textContent = '▶ Show Table';
+        }
+      }
+    }
+
+  // Send all schedules currently displayed
+  async function sendAllSchedules() {
+      if (!currentResults || currentResults.length === 0) {
+        alert('No schedules to send.');
+        return;
+      }
+
+      // Only consider schedules that actually have matched patients
+      const nonEmpty = currentResults.filter(s => Array.isArray(s.patients) && s.patients.length > 0);
+      if (!nonEmpty || nonEmpty.length === 0) {
+        alert('No schedules with matched patients to send.');
+        return;
+      }
+
+      // PRE-SEND VALIDATION: ensure patients have assigned profile and assigned profiles are active
+      const missingProfiles = [];
+      const assignedProfiles = new Set();
+      for (const s of nonEmpty) {
+        for (const p of s.patients || []) {
+          const rawProfile = p.profile || p.Profile || p.assigned_profile || p.assignedProfile || '';
+          const profileVal = rawProfile ? String(rawProfile).trim() : '';
+          if (!profileVal) {
+            missingProfiles.push({ phone: p.phone || '', name: p.name || '', schedule: s.schedule || '' });
+          } else {
+            assignedProfiles.add(profileVal);
+          }
+        }
+      }
+
+      if (missingProfiles.length > 0) {
+        const sample = missingProfiles.slice(0, 6).map(x => `${x.phone || '(no phone)'}${x.name ? ' — ' + x.name : ''} (${x.schedule})`).join('\n');
+        const msg = `There are ${missingProfiles.length} patients without an assigned profile.\n\nAssign profiles before sending.\n\nSample:\n${sample}\n\nOpen Patients page now to assign profiles?`;
+        if (confirm(msg)) {
+          try { ipcRenderer.send('open-Patients-window'); } catch (e) {}
+        }
+        return;
+      }
+
+      // If all assigned, check that assigned profiles are active
+      let activeProfiles = [];
+      try {
+        activeProfiles = await ipcRenderer.invoke('get-profiles-list');
+      } catch (e) { activeProfiles = []; }
+      const inactiveAssigned = Array.from(assignedProfiles).filter(pn => !activeProfiles.includes(pn));
+      if (inactiveAssigned.length > 0) {
+        const sample = inactiveAssigned.slice(0, 6).join(', ');
+        const msg = `The following assigned profile(s) are not active or not started: ${sample}.\n\nUpdate the patient profile before sending.`;
+        if (confirm(msg)) {
+          try { ipcRenderer.send('open-Patients-window'); } catch (e) {}
+        }
+        return;
+      }
+
+      // Build a deduplicated set of patient phones across all non-empty schedules
+      const phoneSet = new Set();
+      for (const s of nonEmpty) {
+        for (const p of s.patients || []) {
+          const ph = (p && p.phone) ? String(p.phone).trim() : '';
+          if (ph) phoneSet.add(ph);
+        }
+      }
+
+      const totalSchedules = nonEmpty.length;
+      const totalUniquePatients = phoneSet.size;
+
+      if (!confirm(`Send templates for ${totalSchedules} schedules to ${totalUniquePatients} unique patients?\n\nA combined CSV report will be generated before queuing.`)) return;
+
+      // Generate combined CSV (deduplicated by phone) and trigger download
+      try {
+        // try to fetch profiles to include Profile column in CSV
+        let profileMapCSV = new Map();
+        try {
+          const profiles = await ipcRenderer.invoke('get-profiles');
+          for (const p of (profiles || [])) { if (p && p.name) profileMapCSV.set(String(p.name), p.name); }
+        } catch (e) { /* ignore */ }
+
+        const headers = ['Customer Name','Phone No','Profile','Schedules','Templates','Last Visit','Last Msg Sent','Last Template'];
+        // Map phone -> aggregated row info (name, schedules list, template list, lastMsg/visit/template from first occurrence)
+        const map = new Map();
+        for (const s of nonEmpty) {
+          for (const p of s.patients || []) {
+            const ph = (p && p.phone) ? String(p.phone).trim() : '';
+            if (!ph) continue;
+            if (!map.has(ph)) {
+              // capture profile from patient record (resolve using profileMapCSV when possible)
+              const rawProfile = p.profile || p.Profile || p.assigned_profile || p.assignedProfile || '';
+              const profileDisplay = rawProfile ? (profileMapCSV.get(String(rawProfile)) || String(rawProfile)) : '';
+              map.set(ph, {
+                  phone: ph,
+                  name: p.name || '',
+                  profile: profileDisplay,
+                  schedules: new Set([s.schedule || '']),
+                  templates: new Set([s.templateName || '']),
+                  lastMsg: p.Last_Msgsent_date || p.last_msgsent_date || p.lastMsgsentDate || p.last_msg_sent || p.last_msg || '',
+                  lastVisit: p.last_visited || p.lastVisited || p.Last_Visited || '',
+                  lastTemplate: p.last_template || p.lastTemplate || p.last_template_name || ''
+                });
+            } else {
+              const cur = map.get(ph);
+              cur.schedules.add(s.schedule || '');
+              cur.templates.add(s.templateName || '');
+            }
+          }
+        }
+
+        const rows = [];
+        for (const v of map.values()) {
+          rows.push([
+            v.name,
+            v.phone,
+            v.profile || '',
+            Array.from(v.schedules).join('|'),
+            Array.from(v.templates).join('|'),
+            v.lastVisit,
+            v.lastMsg,
+            v.lastTemplate
+          ]);
+        }
+
+        // Data is already sorted by last message sent date ASC (oldest first) in the backend
+        // No need to re-sort, just limit to 500
+        if (rows.length > 0) {
+          // Limit to 500 records
+          const limitedRows = rows.slice(0, 500);
+          
+          const csvParts = [headers.join(','), ...limitedRows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(','))];
+          const csv = csvParts.join('\n');
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `combined_schedules_${new Date().toISOString().replace(/[:.]/g,'-')}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }
+      } catch (e) {
+        console.error('Failed to build combined CSV', e);
+      }
+
+      const sendAllBtn = document.getElementById('sendAllBtn');
+      const info = document.getElementById('sendAllInfo');
+      try { sendAllBtn.disabled = true; sendAllBtn.textContent = 'Queueing...'; } catch (e) {}
+      let queued = 0;
+
+      // Queue only non-empty schedules via IPC; small delay between sends to avoid bursts
+      (async () => {
+        for (let i = 0; i < nonEmpty.length; i++) {
+          const s = nonEmpty[i];
+          try {
+            ipcRenderer.send('send-schedule-now-assigned', s);
+            queued++;
+            if (info) info.textContent = `Queued ${queued}/${totalSchedules}`;
+          } catch (e) {
+            console.error('Failed to queue schedule', s && s.schedule, e);
+          }
+          // tiny pause to space out job starts
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        try { sendAllBtn.textContent = 'All Queued'; } catch (e) {}
+        setTimeout(() => { try { sendAllBtn.disabled = false; sendAllBtn.textContent = 'Send All'; if (info) info.textContent = ''; } catch (e) {} }, 3000);
+      })();
+    }
+
+    // Utility: simple CSV export for a schedule
+  async function exportScheduleCSV(schedule) {
+      // include Profile column; try to resolve friendly names
+      let profileMapCSV = new Map();
+      try {
+        const profiles = await ipcRenderer.invoke('get-profiles');
+        for (const p of (profiles || [])) { if (p && p.name) profileMapCSV.set(String(p.name), p.name); }
+      } catch (e) { /* ignore */ }
+
+      const headers = ['Customer Name','Phone No','Profile','Template','Last Visit','Last Msg Sent','Last Template'];
+      // Data is already sorted by last message sent date ASC (oldest first) and limited in the backend
+      // No need to re-sort, just use the data as-is
+      const patients = (schedule.patients || []).slice(0, 500);
+        
+      const rows = patients.map(p => {
+        const rawProfile = p.profile || p.Profile || p.assigned_profile || p.assignedProfile || '';
+        const profileDisplay = rawProfile ? (profileMapCSV.get(String(rawProfile)) || String(rawProfile)) : '';
+        const lastMsg = p.Last_Msgsent_date || p.last_msgsent_date || p.lastMsgsentDate || p.last_msg_sent || p.last_msg || '';
+        const lastVisit = p.last_visited || p.lastVisited || p.Last_Visited || '';
+        const lastTemplate = p.last_template || p.lastTemplate || p.last_template_name || '';
+        return [p.name || '', p.phone || '', profileDisplay, schedule.templateName || '', lastVisit, lastMsg, lastTemplate];
+      });
+      const csvParts = [headers.join(','), ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(','))];
+      const csv = csvParts.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = schedule.schedule ? schedule.schedule.replace(/[^a-z0-9-_]/gi, '_') : 'schedule';
+      a.download = `${safeName}_patients.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // Send schedule now via main process (creates a new isolated sender job)
+    async function sendScheduleNow(schedule, btn) {
+      // PRE-SEND VALIDATION: ensure all matched patients have an assigned profile
+      const patients = Array.isArray(schedule.patients) ? schedule.patients : [];
+      const missing = [];
+      const assigned = new Set();
+      for (const p of patients) {
+        const rawProfile = p.profile || p.Profile || p.assigned_profile || p.assignedProfile || '';
+        const profileVal = rawProfile ? String(rawProfile).trim() : '';
+        if (!profileVal) missing.push({ phone: p.phone || '', name: p.name || '' });
+        else assigned.add(profileVal);
+      }
+
+      if (missing.length > 0) {
+        const sample = missing.slice(0, 6).map(x => `${x.phone || '(no phone)'}${x.name ? ' — ' + x.name : ''}`).join('\n');
+        const msg = `There are ${missing.length} patients in this schedule without an assigned profile.\n\nAssign profiles before sending.\n\nSample:\n${sample}\n\nOpen Patients page now to assign profiles?`;
+        if (confirm(msg)) {
+          try { ipcRenderer.send('open-Patients-window'); } catch (e) {}
+        }
+        return;
+      }
+
+      // Check assigned profiles are active
+      let activeProfiles = [];
+      try { activeProfiles = await ipcRenderer.invoke('get-profiles-list'); } catch (e) { activeProfiles = []; }
+      const inactive = Array.from(assigned).filter(pn => !activeProfiles.includes(pn));
+      if (inactive.length > 0) {
+        const sample = inactive.slice(0, 6).join(', ');
+        const msg = `The following assigned profile(s) are not active or not started: ${sample}.\n\nUpdate the patient profile before sending.`;
+        if (confirm(msg)) {
+          try { ipcRenderer.send('open-Patients-window'); } catch (e) {}
+        }
+        return;
+      }
+
+      if (!confirm(`Send template "${schedule.templateName || '(none)'}" to ${schedule.patients.length} patients for schedule '${schedule.schedule}'?`)) return;
+      try { btn.disabled = true; btn.textContent = 'Queued...'; } catch (e) {}
+      // Use the new IPC that prefers patient-assigned profiles when available
+      ipcRenderer.send('send-schedule-now-assigned', schedule);
+    }
+
+    // Listen for schedule send IPC replies/progress
+    ipcRenderer.on('schedule-send-response', (ev, res) => {
+      // res: { success, message, jobId, schedule }
+      const id = res && res.schedule;
+      const container = document.getElementById('results');
+      const div = Array.from(container.querySelectorAll('.schedule')).find(d => d.dataset && d.dataset.scheduleName === id);
+      if (div) {
+        const info = div.querySelector('.meta');
+        if (info) info.textContent = (res.message || '') + (res.total ? ` Sent: 0/${res.total}` : '');
+        const btn = div.querySelector('button.primary');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sending...'; btn.dataset.jobId = res.jobId || ''; }
+      }
+    });
+
+    ipcRenderer.on('schedule-message-progress', (ev, p) => {
+      // p: { id: jobId, profile, number, status, sent, failed, total, schedule }
+      const container = document.getElementById('results');
+      const div = Array.from(container.querySelectorAll('.schedule')).find(d => d.dataset && d.dataset.scheduleName === p.schedule);
+      if (div) {
+        const info = div.querySelector('.meta');
+        if (info) info.textContent = `Template: ${p.template || ''} — Sent: ${p.sent}/${p.total} — Failed: ${p.failed}`;
+      }
+    });
+
+    // Handle daily limit reached alerts for scheduled messages
+    ipcRenderer.on("daily-limit-reached", (event, data) => {
+      const { profileName, dailyLimit, sentToday, message, skippedCount } = data;
+      
+      let alertMessage = `⚠️ DAILY LIMIT REACHED\n\n`;
+      alertMessage += `Profile: ${profileName}\n`;
+      alertMessage += `Daily Limit: ${dailyLimit} messages\n`;
+      alertMessage += `Already Sent Today: ${sentToday} messages\n\n`;
+      alertMessage += message;
+      
+      if (skippedCount && skippedCount > 0) {
+        alertMessage += `\n\n📊 Impact: ${skippedCount} scheduled messages skipped for this profile`;
+      }
+      
+      alertMessage += `\n\n💡 Tip: You can adjust daily limits in the profile settings or wait until tomorrow to continue sending.`;
+      
+      alert(alertMessage);
+    });
+
+    ipcRenderer.on('schedule-message-finished', (ev, f) => {
+      // f: { id: jobId, total, sent, failed, schedule }
+      const container = document.getElementById('results');
+      const div = Array.from(container.querySelectorAll('.schedule')).find(d => d.dataset && d.dataset.scheduleName === f.schedule);
+      if (div) {
+        const info = div.querySelector('.meta');
+        if (info) info.textContent = `Completed — Sent: ${f.sent}/${f.total} — Failed: ${f.failed}`;
+        const btn = div.querySelector('button.primary');
+        if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+      }
+    });
+
+    // Toggle all schedules expand/collapse
+    function toggleAllSchedules() {
+      const toggleBtn = document.getElementById('toggleAllBtn');
+      const isCollapseMode = toggleBtn.textContent === 'Collapse All';
+      
+      const allContentDivs = document.querySelectorAll('.schedule-content');
+      const allExpandBtns = document.querySelectorAll('.expand-btn');
+      
+      allContentDivs.forEach(contentDiv => {
+        if (isCollapseMode) {
+          // Collapse all
+          contentDiv.classList.add('collapsed');
+        } else {
+          // Expand all
+          contentDiv.classList.remove('collapsed');
+        }
+      });
+      
+      allExpandBtns.forEach(expandBtn => {
+        if (isCollapseMode) {
+          // Collapse all
+          expandBtn.classList.remove('expanded');
+          expandBtn.textContent = '▶ Show Table';
+        } else {
+          // Expand all
+          expandBtn.classList.add('expanded');
+          expandBtn.textContent = '▼ Hide Table';
+        }
+      });
+      
+      // Toggle the main button text
+      toggleBtn.textContent = isCollapseMode ? 'Expand All' : 'Collapse All';
+    }
+
+    // Basic HTML-escape to avoid accidental markup
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Helper function to calculate days ago from a date
+    function getDaysAgo(dateStr) {
+      if (!dateStr || dateStr.trim() === '') return '';
+      
+      try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr; // Return original if invalid date
+        
+        const today = new Date();
+        const diffTime = today - date;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return '1 day ago';
+        if (diffDays < 0) return `${Math.abs(diffDays)} days ahead`; // Future date
+        return `${diffDays} days ago`;
+      } catch (e) {
+        return dateStr; // Return original if error
+      }
+    }
+  </script>
+</body>
+</html>

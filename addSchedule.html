@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Add Schedule</title>
+  <style>
+    :root{ --bg:#f6f8fb; --card:#ffffff; --muted:#6b7280; --accent:#2563eb; --danger:#dc2626; --radius:10px }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);margin:0;padding:18px;color:#111}
+    .container{max-width:520px;margin:0 auto}
+    .card{background:var(--card);border-radius:var(--radius);padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    h3{margin:0 0 12px 0;font-size:18px}
+    label.field{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    .row{margin-bottom:12px}
+    input[type=text], input[type=number], select{width:100%;padding:10px;border:1px solid #e6e9ee;border-radius:8px;font-size:14px}
+    .muted{font-size:12px;color:var(--muted)}
+    .controls{display:flex;gap:8px;align-items:center}
+    .btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .btn.secondary{background:#eef2ff;color:var(--accent)}
+    .btn.ghost{background:transparent;color:var(--accent);border:1px solid #e6eefb}
+    .small{font-size:13px;padding:6px 10px}
+    /* modern multi-select (copied from scheduleMsg for consistent UX) */
+    .multi-select{position:relative;border-radius:8px;border:1px solid #e6e9ee;background:#fff}
+    .ms-selected{padding:10px;min-height:42px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;cursor:text}
+    .ms-chip{background:#eef2ff;color:#0b74de;padding:6px 8px;border-radius:999px;font-size:13px}
+    .ms-placeholder{color:var(--muted)}
+    .ms-dropdown{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e6e9ee;border-radius:8px;padding:8px;margin-top:8px;z-index:40;box-shadow:0 8px 24px rgba(15,23,42,0.08);max-height:240px;overflow:auto}
+  .hidden{display:none !important}
+    .ms-search input{width:100%;padding:8px;border:1px solid #eef2f6;border-radius:6px;margin-bottom:8px}
+    .ms-option{padding:8px;border-radius:6px;cursor:pointer}
+    .ms-option:hover{background:#f3f6ff}
+    .ms-option.selected{background:#e6f0ff}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>Add Schedule</h3>
+        
+      </div>
+
+      <div class="row">
+        <label class="field">Schedule Name</label>
+        <input id="schedName" type="text" placeholder="e.g. Follow-up after 7 days">
+      </div>
+
+      <div class="row">
+        <label class="field">Template</label>
+        <select id="templateSelect"></select>
+      </div>
+
+      <div class="row" style="display:flex;gap:10px;align-items:center">
+        <div style="flex:1">
+          <label class="field">Days (after)</label>
+          <input id="daysInput" type="number" min="0" value="1">
+        </div>
+        
+      </div>
+
+      <div class="row">
+        <label class="field">Profiles</label>
+        <!-- Modern multi-select -->
+        <div id="profilesContainer" class="multi-select">
+          <div class="ms-selected" id="msSelected">Select profiles...</div>
+          <div class="ms-dropdown hidden" id="msDropdown">
+            <div class="ms-search"><input type="text" id="msSearch" placeholder="Search profiles..."></div>
+            <div class="ms-options" id="msOptions"></div>
+          </div>
+        </div>
+        <div class="muted" style="margin-top:6px">Type to search. Click items to toggle selection. Choose <strong>All</strong> to target all profiles.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button id="saveBtn" class="btn">Save Schedule</button>
+        <button id="cancelBtn" class="btn secondary small" onclick="window.close()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    // Multi-select state
+    const msDropdown = document.getElementById('msDropdown');
+    const msOptions = document.getElementById('msOptions');
+    const msSelected = document.getElementById('msSelected');
+    const msSearch = document.getElementById('msSearch');
+  const selectedProfilesSet = new Set();
+  let prefillProfiles = null;
+  let prefillData = null; // store entire prefill payload if it arrives early
+
+    async function init() {
+      const templates = await ipcRenderer.invoke('get-templates-list');
+      const templateSelect = document.getElementById('templateSelect');
+      templateSelect.innerHTML = '<option value="">-- select --</option>' + templates.map(t=>`<option value="${t}">${t}</option>`).join('');
+
+      await loadProfiles();
+
+      // If a prefill payload arrived before init finished, apply it now so all inputs are populated
+      if (prefillData) {
+        try {
+          document.getElementById('schedName').value = prefillData.name || '';
+          document.getElementById('templateSelect').value = prefillData.templateName || '';
+          document.getElementById('daysInput').value = prefillData.days || 0;
+          // profiles: if msOptions already populated, set selection; otherwise loadProfiles will handle prefillProfiles
+          if (Array.isArray(prefillData.profiles) && msOptions && msOptions.children.length>0) {
+            selectedProfilesSet.clear();
+            prefillData.profiles.forEach(p => selectedProfilesSet.add(p));
+            Array.from(msOptions.children).forEach(opt=>{ opt.classList.toggle('selected', selectedProfilesSet.has(opt.dataset.value)); });
+            renderSelectedChips();
+          } else {
+            prefillProfiles = prefillData.profiles || null;
+          }
+        } catch (e) {
+          console.error('Applying prefillData failed:', e && e.message);
+        }
+        prefillData = null;
+      }
+    }
+
+    async function loadProfiles(){
+      try{
+        const profiles = await ipcRenderer.invoke('get-profiles-list');
+        msOptions.innerHTML = '';
+        // Add 'All' option
+        const allOpt = document.createElement('div');
+        allOpt.className = 'ms-option';
+        allOpt.dataset.value = 'All';
+        allOpt.textContent = 'All (use all active profiles)';
+        msOptions.appendChild(allOpt);
+
+        (profiles||[]).forEach(n=>{
+          const o = document.createElement('div');
+          o.className = 'ms-option';
+          o.dataset.value = n;
+          o.textContent = n;
+          msOptions.appendChild(o);
+        });
+
+        // apply any prefill
+        if(prefillProfiles){
+          selectedProfilesSet.clear();
+          (prefillProfiles||[]).forEach(p=> selectedProfilesSet.add(p));
+          prefillProfiles = null;
+          // update option selected classes
+          Array.from(msOptions.children).forEach(opt=>{ opt.classList.toggle('selected', selectedProfilesSet.has(opt.dataset.value)); });
+        }
+
+        renderSelectedChips();
+      }catch(e){ console.error(e) }
+    }
+
+    function renderSelectedChips(){
+      msSelected.innerHTML = '';
+      if(selectedProfilesSet.size === 0){ const ph = document.createElement('span'); ph.className='ms-placeholder'; ph.textContent='Select profiles...'; msSelected.appendChild(ph); return; }
+      if(selectedProfilesSet.has('All')){ const chip = document.createElement('span'); chip.className='ms-chip'; chip.textContent = 'All'; msSelected.appendChild(chip); return; }
+      for(const v of selectedProfilesSet){ const chip = document.createElement('span'); chip.className='ms-chip'; chip.textContent=v; msSelected.appendChild(chip); }
+    }
+
+    function toggleOptionValue(val){
+      if(val==='All'){
+        if(selectedProfilesSet.has('All')) selectedProfilesSet.clear(); else { selectedProfilesSet.clear(); selectedProfilesSet.add('All'); }
+      } else {
+        if(selectedProfilesSet.has('All')) selectedProfilesSet.delete('All');
+        if(selectedProfilesSet.has(val)) selectedProfilesSet.delete(val); else selectedProfilesSet.add(val);
+      }
+      Array.from(msOptions.children).forEach(opt=>{ opt.classList.toggle('selected', selectedProfilesSet.has(opt.dataset.value)); });
+      renderSelectedChips();
+    }
+
+    msOptions.addEventListener('click', (e)=>{ const opt = e.target.closest('.ms-option'); if(!opt) return; const v = opt.dataset.value; toggleOptionValue(v); });
+    msSearch && msSearch.addEventListener('input', ()=>{ const q = (msSearch.value||'').toLowerCase().trim(); Array.from(msOptions.children).forEach(opt=>{ const text = (opt.textContent||'').toLowerCase(); opt.style.display = q ? (text.includes(q) ? '' : 'none') : ''; }); });
+    const profilesContainer = document.getElementById('profilesContainer');
+    msSelected.addEventListener('click', (e)=>{ e.stopPropagation(); msDropdown.classList.toggle('hidden'); if(!msDropdown.classList.contains('hidden')) msSearch && msSearch.focus(); });
+    document.addEventListener('click', (e)=>{ if(!profilesContainer.contains(e.target)) msDropdown.classList.add('hidden'); });
+
+    function getSelectedProfiles(){ if(selectedProfilesSet.size===0) return []; if(selectedProfilesSet.has('All')) return ['All']; return Array.from(selectedProfilesSet); }
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const name = document.getElementById('schedName').value.trim();
+      const template = document.getElementById('templateSelect').value;
+      const days = Number(document.getElementById('daysInput').value) || 0;
+      const profiles = getSelectedProfiles();
+
+      if (!name) return alert('Enter schedule name');
+      if (!template) return alert('Select a template');
+      if (profiles.length === 0) return alert('Select one or more profiles');
+
+      const res = await ipcRenderer.invoke('save-schedule', { name, template, days, profiles });
+      if (res && res.success) {
+        ipcRenderer.send('schedule-saved');
+        alert('Schedule saved');
+        window.close();
+      } else {
+        alert('Failed to save schedule: ' + (res.error || 'unknown'));
+      }
+    });
+
+    // Allow prefill when editing: parent window will send 'prefill-schedule' with data
+    ipcRenderer.on('prefill-schedule', (event, data) => {
+      if (!data) return;
+      // If DOM is not yet ready, store the payload and let init() apply it after loading templates/profiles
+      const nameEl = document.getElementById('schedName');
+      const templateEl = document.getElementById('templateSelect');
+      const daysEl = document.getElementById('daysInput');
+      if (!nameEl || !templateEl || !daysEl) {
+        prefillData = data;
+        return;
+      }
+
+      // DOM exists: apply directly
+      try {
+        nameEl.value = data.name || '';
+        templateEl.value = data.templateName || '';
+        daysEl.value = data.days || 0;
+      } catch (e) { console.error('Failed applying prefill fields:', e && e.message); }
+
+      // apply to multi-select; if options not yet loaded, store for later
+      prefillProfiles = (data.profiles || []);
+      // If options already loaded, apply immediately
+      if(msOptions && msOptions.children.length>0){
+        selectedProfilesSet.clear();
+        prefillProfiles.forEach(p=> selectedProfilesSet.add(p));
+        Array.from(msOptions.children).forEach(opt=>{ opt.classList.toggle('selected', selectedProfilesSet.has(opt.dataset.value)); });
+        renderSelectedChips();
+        prefillProfiles = null;
+      }
+    });
+
+    init();
+
+  </script>
+</body>
+</html>

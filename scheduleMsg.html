@@ -1,0 +1,1291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Send Message • Whasend</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <style>
+    :root{ --bg:#f6f8fb; --card:#ffffff; --muted:#6b7280; --accent:#2563eb; --danger:#dc2626; --radius:10px }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);margin:0;padding:24px;color:#111}
+    .container{max-width:1100px;margin:0 auto}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    header h1{font-size:18px;margin:0}
+    header p{margin:0;color:var(--muted);font-size:13px}
+
+    .card{background:var(--card);border-radius:var(--radius);padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+    @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+
+    form .row{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+    label.field{width:140px;flex-shrink:0;color:var(--muted);font-size:13px;font-weight:600}
+    select, input[type=text], input[type=time], textarea, input[type=number]{flex:1;padding:8px 10px;border:1px solid #e6e9ee;border-radius:8px;font-size:14px}
+    textarea{min-height:98px;resize:vertical}
+    .muted{font-size:12px;color:var(--muted)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .btn.secondary{background:#eef2ff;color:var(--accent)}
+    .btn.warn{background:var(--danger)}
+    .small{font-size:13px;padding:6px 10px}
+    .hidden{display:none}
+    .error{color:var(--danger);font-size:12px}
+    /* right column preview */
+    .side{display:flex;flex-direction:column;gap:12px}
+    .preview{border:1px dashed #e6e9ee;padding:12px;border-radius:8px;background:#fbfdff}
+    .preview img{max-width:100%;border-radius:6px}
+    .card-title{font-weight:600;margin-bottom:8px}
+    .help{font-size:12px;color:var(--muted)}
+    .select-multi{height:110px}
+  /* modern multi-select */
+  .multi-select{position:relative;border-radius:8px;border:1px solid #e6e9ee;background:#fff}
+  .ms-selected{padding:10px;min-height:42px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;cursor:text}
+  .ms-chip{background:#eef2ff;color:#0b74de;padding:6px 8px;border-radius:999px;font-size:13px}
+  .ms-placeholder{color:var(--muted)}
+  .ms-dropdown{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e6e9ee;border-radius:8px;padding:8px;margin-top:8px;z-index:40;box-shadow:0 8px 24px rgba(15,23,42,0.08);max-height:240px;overflow:auto}
+  .ms-search input{width:100%;padding:8px;border:1px solid #eef2f6;border-radius:6px;margin-bottom:8px}
+  .ms-option{padding:8px;border-radius:6px;cursor:pointer}
+  .ms-option:hover{background:#f3f6ff}
+  .ms-option.selected{background:#e6f0ff}
+
+  /* Modal styles */
+  .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+  .modal-overlay.hidden{display:none !important}
+  .modal{background:white;border-radius:16px;padding:32px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15)}
+  .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .modal-title{font-size:18px;font-weight:600;margin:0}
+  .modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted)}
+  .modal-body{margin-bottom:20px}
+  .file-drop-zone{border:3px dashed #ddd;border-radius:12px;padding:80px 40px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafbfc;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:16px;color:#666}
+  .file-drop-zone:hover{border-color:#0066cc;background:#f0f7ff;color:#0066cc}
+  .file-drop-zone.dragover{border-color:#0066cc;background:#e6f0ff;color:#0066cc;transform:scale(1.02)}
+  .file-info{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e6e9ee;border-radius:8px;margin-top:12px}
+  .file-info-icon{font-size:24px}
+  .file-info-details{flex:1}
+  .file-info-name{font-weight:500}
+  .file-info-size{font-size:12px;color:var(--muted)}
+  .modal-footer{display:flex;gap:12px;justify-content:flex-end}
+
+  /* Excel Wizard Styles */
+  .excel-wizard{max-width:1200px !important;width:98% !important;max-height:95vh !important}
+  .wizard-steps{display:flex;justify-content:space-between;padding:20px 0;border-bottom:1px solid #e6e9ee;margin-bottom:24px}
+  .step{display:flex;align-items:center;gap:8px;color:#999;font-size:14px;position:relative}
+  .step.active{color:#0066cc}
+  .step.completed{color:#28a745}
+  .step-number{width:32px;height:32px;border-radius:50%;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;font-weight:600;background:#fff}
+  .step.active .step-number{border-color:#0066cc;color:#0066cc}
+  .step.completed .step-number{border-color:#28a745;background:#28a745;color:#fff}
+  .step:not(:last-child):after{content:'';position:absolute;left:100%;top:50%;width:50px;height:2px;background:#ddd;transform:translateY(-50%);z-index:-1}
+  .step.completed:not(:last-child):after{background:#28a745}
+  
+  .wizard-content{display:none}
+  .wizard-content.active{display:block}
+  .step-content h4{margin:0 0 12px 0;color:#333;font-size:18px}
+  .step-content p{color:#666;margin-bottom:20px}
+  
+  .header-row-selector{margin-bottom:20px}
+  .header-row-selector label{display:block;margin-bottom:8px;font-weight:500}
+  .header-row-selector select{padding:8px 12px;border:1px solid #ddd;border-radius:6px}
+  
+  .excel-preview, .mapping-preview, .final-preview{border:1px solid #e6e9ee;border-radius:8px;max-height:400px;overflow:auto;background:#fff}
+  .excel-table{width:100%;border-collapse:collapse}
+  .excel-table th, .excel-table td{border:1px solid #e6e9ee;padding:8px;text-align:left;font-size:13px}
+  .excel-table th{background:#f8f9fa;font-weight:600;position:sticky;top:0}
+  .excel-table tr:nth-child(even){background:#f8f9fa}
+  
+  .column-mapping{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
+  .mapping-row{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e6e9ee;border-radius:6px;background:#f8f9fa}
+  .mapping-arrow{font-size:18px;color:#666}
+  .mapping-select{flex:1;padding:8px;border:1px solid #ddd;border-radius:4px}
+  
+  .validation-results{margin-bottom:20px}
+  .validation-item{display:flex;align-items:center;gap:8px;padding:8px;margin-bottom:8px;border-radius:4px}
+  .validation-success{background:#d4edda;color:#155724}
+  .validation-warning{background:#fff3cd;color:#856404}
+  .validation-error{background:#f8d7da;color:#721c24}
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Schedule / Send Message</h1>
+        <!-- <p>Send personalized messages using templates, images, and Excel lists. Choose profiles and schedule delivery.</p> -->
+      </div>
+      <div>
+        <button type="button" id="downloadSampleBtn" class="btn secondary small" style="display:flex;align-items:center;gap:6px;">
+          <span>📥</span>
+          <span>Download Sample</span>
+        </button>
+      </div>
+      <!-- <div class="muted">Page: <strong>Send Message</strong></div> -->
+    </header>
+
+    <div class="card grid">
+      <div>
+        <div id="dbgStatus" class="muted" style="margin-bottom:8px; display:none"></div>
+        <form id="sendMessageForm" novalidate>
+
+          <div class="row">
+            <label class="field">Message Type <span class="error" id="errMessageType"></span></label>
+            <div style="flex:1">
+              <select id="messageType" name="messageType" required>
+                <option value="">-- Select Type --</option>
+                <option value="template">Template</option>
+                <option value="text">Text</option>
+                <option value="media">Media</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="templateDiv" class="row hidden">
+            <label class="field">Template <span class="error" id="errTemplate"></span></label>
+            <select id="template" name="template">
+              <option value="">-- Select Template --</option>
+            </select>
+          </div>
+
+          <div id="textDiv" class="row hidden">
+            <label class="field">Message <span class="error" id="errTextMessage"></span></label>
+            <textarea id="textMessage" name="textMessage" placeholder="Enter your custom message here..." rows="4"></textarea>
+          </div>
+
+          <div id="mediaDiv" class="row hidden">
+            <label class="field">Media File <span class="error" id="errMediaFile"></span></label>
+            <input type="file" id="mediaFile" name="mediaFile" accept="image/*,video/*,audio/*,.pdf,.doc,.docx">
+          </div>
+
+          <div class="row">
+            <label class="field">Profiles <span class="error" id="errProfiles"></span></label>
+            <div style="flex:1">
+              <!-- Modern multi-select -->
+              <div id="profilesContainer" class="multi-select">
+                <div class="ms-selected" id="msSelected">Select profiles...</div>
+                <div class="ms-dropdown hidden" id="msDropdown">
+                  <div class="ms-search"><input type="text" id="msSearch" placeholder="Search profiles..."></div>
+                  <div class="ms-options" id="msOptions"></div>
+                </div>
+              </div>
+              <div class="muted">Type to search. Click items to toggle selection. Choose <strong>All</strong> to use all active profiles.</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <label class="field">Sender Excel <span class="error" id="errExcelFile"></span></label>
+            <div style="flex:1">
+              <button type="button" id="selectExcelBtn" class="btn secondary" style="width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;">
+                <span id="excelFileName">📁 Select Excel/CSV File</span>
+                <span>📂</span>
+              </button>
+              <div class="muted" style="margin-top:4px;">Click to browse and select your Excel (.xlsx, .xls) or CSV file</div>
+              <button type="button" id="viewParsedDataBtn" class="btn small" style="margin-top:8px;display:none;">
+                📊 View Parsed Data
+              </button>
+            </div>
+          </div>
+
+          <div class="row">
+            <label class="field">Schedule</label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <label><input type="radio" name="scheduletime" value="rightnow" checked> Now</label>
+              <label><input type="radio" name="scheduletime" value="Time">Time</label>
+              <input type="time" id="scheduleTime" name="scheduletimess" disabled>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button type="button" id="previewBtn" class="btn secondary small">Preview</button>
+              <button type="submit" class="btn small">Send Message</button>
+              <!--button type="button" id="diagBtn" class="btn secondary small">Run Diagnostics</button-->
+          </div>
+
+        </form>
+      </div>
+
+      <aside class="side">
+        <div class="preview card">
+          <div class="card-title">Preview</div>
+          <div id="mediaPreview" class="hidden"></div>
+          <div id="messagePreview" class="muted">Selected template or typed message will show here.</div>
+        </div>
+
+        <div class="preview">
+          <div class="card-title">Quick Tips</div>
+          <ul class="muted">
+            <li><strong>Template:</strong> Use saved templates with personalization.</li>
+            <li><strong>Text:</strong> Enter custom message directly.</li>
+            <li><strong>Media:</strong> Images, videos, audio, or documents ≤ 16MB.</li>
+            <li>When scheduling, ensure your machine is online at send time.</li>
+          </ul>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- Excel File Selection Modal -->
+  <div id="excelModal" class="modal-overlay hidden">
+    <div class="modal excel-wizard">
+      <div class="modal-header">
+        <h3 class="modal-title">📊 Excel File Processing</h3>
+        <button class="modal-close" id="closeExcelModal">&times;</button>
+      </div>
+      
+      <!-- Wizard Steps -->
+      <div class="wizard-steps">
+        <div class="step active" data-step="1">
+          <div class="step-number">1</div>
+          <div class="step-label">Upload Excel File</div>
+        </div>
+        <div class="step" data-step="2">
+          <div class="step-number">2</div>
+          <div class="step-label">Select Header Row</div>
+        </div>
+        <div class="step" data-step="3">
+          <div class="step-number">3</div>
+          <div class="step-label">Match Columns</div>
+        </div>
+        <div class="step" data-step="4">
+          <div class="step-number">4</div>
+          <div class="step-label">Validate Data</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <!-- Step 1: Upload Excel -->
+        <div id="step1" class="wizard-content active">
+          <div class="file-drop-zone" id="fileDropZone">
+            <div style="font-size:72px;margin-bottom:20px;opacity:0.7;">📊</div>
+            <div style="font-size:20px;margin-bottom:12px;font-weight:600;color:#333;">Upload Excel File</div>
+            <div style="font-size:16px;margin-bottom:20px;color:#666;">Drag and drop your Excel or CSV file here, or click to browse</div>
+            <button type="button" class="btn" style="margin-top:8px;font-size:16px;padding:12px 24px;">Select File</button>
+            <div style="margin-top:16px;color:#999;font-size:13px;">Supported formats: .xlsx, .xls, .csv</div>
+            <input type="file" id="hiddenExcelInput" accept=".xlsx,.xls,.csv" style="display:none;">
+          </div>
+          <div id="selectedFileInfo" class="hidden"></div>
+        </div>
+
+        <!-- Step 2: Select Header Row -->
+        <div id="step2" class="wizard-content hidden">
+          <div class="step-content">
+            <h4>Select Header Row</h4>
+            <p>Please select which row contains the column headers:</p>
+            <div class="header-row-selector">
+              <label>Header Row Number:</label>
+              <select id="headerRowSelect">
+                <option value="1">Row 1</option>
+                <option value="2">Row 2</option>
+                <option value="3">Row 3</option>
+                <option value="4">Row 4</option>
+                <option value="5">Row 5</option>
+              </select>
+            </div>
+            <div id="excelPreview" class="excel-preview"></div>
+          </div>
+        </div>
+
+        <!-- Step 3: Match Columns -->
+        <div id="step3" class="wizard-content hidden">
+          <div class="step-content">
+            <h4>Match Columns</h4>
+            <p>Map your Excel columns to the required fields:</p>
+            <div id="columnMapping" class="column-mapping"></div>
+            <div id="mappingPreview" class="mapping-preview"></div>
+          </div>
+        </div>
+
+        <!-- Step 4: Validate Data -->
+        <div id="step4" class="wizard-content hidden">
+          <div class="step-content">
+            <h4>Validate Data</h4>
+            <p>Review your data before proceeding:</p>
+            <div id="validationResults" class="validation-results"></div>
+            <div id="finalPreview" class="final-preview"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn secondary" id="prevStepBtn" style="display:none;">Previous</button>
+        <button type="button" class="btn secondary" id="cancelExcelSelection">Cancel</button>
+        <button type="button" class="btn" id="nextStepBtn" disabled>Next</button>
+        <button type="button" class="btn" id="confirmExcelSelection" style="display:none;">Proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parsed Data Viewer Modal -->
+  <div id="parsedDataModal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:1000px;width:95%;max-height:90vh;">
+      <div class="modal-header">
+        <h3 class="modal-title">📊 Parsed Excel Data</h3>
+        <button class="modal-close" id="closeParsedDataModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="parsedDataInfo" class="muted" style="margin-bottom:12px;"></div>
+        <div id="parsedDataPreview" class="excel-preview"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn secondary" id="closeParsedDataModalBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    (function(){
+      const form = document.getElementById('sendMessageForm');
+      const messageTypeEl = document.getElementById('messageType');
+      const templateDiv = document.getElementById('templateDiv');
+      const templateEl = document.getElementById('template');
+  const profilesEl = null; // legacy select removed
+  const profilesContainer = document.getElementById('profilesContainer');
+  const msDropdown = document.getElementById('msDropdown');
+  const msOptions = document.getElementById('msOptions');
+  const msSelected = document.getElementById('msSelected');
+  const msSearch = document.getElementById('msSearch');
+  const selectedProfilesSet = new Set();
+      const selectExcelBtn = document.getElementById('selectExcelBtn');
+      const excelFileName = document.getElementById('excelFileName');
+      const excelModal = document.getElementById('excelModal');
+      const closeExcelModal = document.getElementById('closeExcelModal');
+      const fileDropZone = document.getElementById('fileDropZone');
+      const hiddenExcelInput = document.getElementById('hiddenExcelInput');
+      const selectedFileInfo = document.getElementById('selectedFileInfo');
+      const cancelExcelSelection = document.getElementById('cancelExcelSelection');
+      const confirmExcelSelection = document.getElementById('confirmExcelSelection');
+      const nextStepBtn = document.getElementById('nextStepBtn');
+      const prevStepBtn = document.getElementById('prevStepBtn');
+      const headerRowSelect = document.getElementById('headerRowSelect');
+      const excelPreview = document.getElementById('excelPreview');
+      const columnMapping = document.getElementById('columnMapping');
+      const mappingPreview = document.getElementById('mappingPreview');
+      const validationResults = document.getElementById('validationResults');
+      const finalPreview = document.getElementById('finalPreview');
+      const viewParsedDataBtn = document.getElementById('viewParsedDataBtn');
+      const parsedDataModal = document.getElementById('parsedDataModal');
+      const closeParsedDataModal = document.getElementById('closeParsedDataModal');
+      const closeParsedDataModalBtn = document.getElementById('closeParsedDataModalBtn');
+      const parsedDataInfo = document.getElementById('parsedDataInfo');
+      const parsedDataPreview = document.getElementById('parsedDataPreview');
+      const downloadSampleBtn = document.getElementById('downloadSampleBtn');
+      
+      let selectedExcelFile = null;
+      let excelData = null;
+      let currentStep = 1;
+      let headerRowIndex = 1;
+      let columnMappings = {};
+      let parsedExcelData = null;
+      let mappedFilePath = null;
+      let originalFilePath = null;
+
+      // Debug: Check if elements exist
+      console.log('Excel modal elements:', {
+        selectExcelBtn: !!selectExcelBtn,
+        excelModal: !!excelModal,
+        closeExcelModal: !!closeExcelModal,
+        cancelExcelSelection: !!cancelExcelSelection,
+        confirmExcelSelection: !!confirmExcelSelection,
+        nextStepBtn: !!nextStepBtn,
+        prevStepBtn: !!prevStepBtn
+      });
+      const textDiv = document.getElementById('textDiv');
+      const textMessageEl = document.getElementById('textMessage');
+      const mediaDiv = document.getElementById('mediaDiv');
+      const mediaFileEl = document.getElementById('mediaFile');
+      const mediaPreviewDiv = document.getElementById('mediaPreview');
+      const messagePreview = document.getElementById('messagePreview');
+  const dbgStatus = document.getElementById('dbgStatus');
+
+      // error spans (kept small)
+      const err = {
+        messageType: document.getElementById('errMessageType'),
+        template: document.getElementById('errTemplate'),
+        profiles: document.getElementById('errProfiles'),
+        mediaFile: document.getElementById('errMediaFile'),
+        textMessage: document.getElementById('errTextMessage'),
+        excelFile: document.getElementById('errExcelFile')
+      };
+
+      function setVisible(el, show){
+        if(!el) return;
+        // Prefer inline style for reliability in Electron/Windows (overrides CSS specificity)
+        try {
+          if (!el.dataset.origDisplay) {
+            // record the original computed display to restore later
+            const cs = window.getComputedStyle(el);
+            el.dataset.origDisplay = cs.display && cs.display !== 'none' ? cs.display : 'flex';
+          }
+          if (show) {
+            el.style.display = el.dataset.origDisplay;
+            el.classList.remove('hidden');
+          } else {
+            el.style.display = 'none';
+            el.classList.add('hidden');
+          }
+        } catch (e) {
+          // fallback to class toggle
+          if(show) el.classList.remove('hidden'); else el.classList.add('hidden');
+        }
+      }
+
+      function updatePreview() {
+        const msgType = messageTypeEl.value;
+        if(msgType === 'template') {
+          messagePreview.textContent = templateEl.value || 'Select a template to see preview here.';
+        } else if(msgType === 'text') {
+          messagePreview.textContent = textMessageEl.value || 'Enter your message to see preview here.';
+        } else if(msgType === 'media') {
+          const file = mediaFileEl.files[0];
+          messagePreview.textContent = file ? `📎 Media: ${file.name}` : 'Select a media file to see preview here.';
+        } else {
+          messagePreview.textContent = 'Select a message type to see preview here.';
+        }
+      }
+
+      let lastMessageType = ''; // Track last type to detect changes
+
+      function updateVisibility(clearFields = true){
+        const v = messageTypeEl && messageTypeEl.value;
+        // debug: log current selection and target visibility
+        try { console.debug('[scheduleMsg] updateVisibility ->', { value: v }); } catch (e) {}
+        
+        // Clear previous selections only when type actually changes (not on initial load)
+        if (clearFields && lastMessageType && lastMessageType !== v) {
+          if (templateEl) templateEl.value = '';
+          if (textMessageEl) textMessageEl.value = '';
+          if (mediaFileEl) {
+            mediaFileEl.value = '';
+            // Clear media preview
+            if (mediaPreviewDiv) {
+              mediaPreviewDiv.innerHTML = '';
+              setVisible(mediaPreviewDiv, false);
+            }
+          }
+          // Clear any error messages
+          if (err.template) err.template.textContent = '';
+          if (err.textMessage) err.textMessage.textContent = '';
+          if (err.mediaFile) err.mediaFile.textContent = '';
+        }
+        
+        lastMessageType = v; // Remember current type
+        
+        setVisible(templateDiv, v === 'template');
+        setVisible(textDiv, v === 'text');
+        setVisible(mediaDiv, v === 'media');
+        updatePreview(); // Update preview when type changes
+        // update debug UI
+        // try { if (dbgStatus) { dbgStatus.style.display = 'block'; dbgStatus.textContent = `messageType: ${String(v)}`; } } catch (e) {}
+      }
+
+      function resetErrors(){ Object.values(err).forEach(e=>{ if(e) e.textContent=''; }); }
+
+      function validateForm(){
+        resetErrors(); let valid=true;
+        const msgType = messageTypeEl.value;
+        if(!msgType){ err.messageType.textContent=' * required'; valid=false }
+        const selectedProfiles = getSelectedProfiles();
+        if(selectedProfiles.length===0){ err.profiles.textContent=' * select at least one profile'; valid=false }
+
+        if(msgType==='template'){
+          if(!templateEl.value){ err.template.textContent=' * required'; valid=false }
+        } else if(msgType==='text'){
+          if(!textMessageEl.value.trim()){ err.textMessage.textContent=' * enter message text'; valid=false }
+        } else if(msgType==='media'){
+          if(!mediaFileEl.files || mediaFileEl.files.length===0){ err.mediaFile.textContent=' * select media file'; valid=false }
+        }
+
+        // Excel validation - check if we have either a file or mapped file path
+        if (mappedFilePath) {
+          // We have processed Excel data from wizard
+          console.log('✅ Using mapped Excel data from wizard');
+        } else if (hiddenExcelInput.files && hiddenExcelInput.files.length > 0) {
+          // We have a direct file upload
+          const ex = hiddenExcelInput.files[0]; 
+          if (!ex.name.match(/\.(xlsx|xls|csv)$/i)) { 
+            err.excelFile.textContent = ' * invalid file format'; 
+            valid = false; 
+          }
+        } else {
+          // No Excel data at all
+          err.excelFile.textContent = ' * Excel file required';
+          valid = false;
+        }
+
+        return valid;
+      }
+
+      function previewMedia(){
+        const files = mediaFileEl.files; 
+        if(files && files.length){ 
+          const file=files[0]; 
+          const reader=new FileReader(); 
+          reader.onload=e=>{
+            if(file.type.startsWith('image/')){
+              mediaPreviewDiv.innerHTML='<img src="'+e.target.result+'" style="max-width:100%;border-radius:6px;">';
+            } else if(file.type.startsWith('video/')){
+              mediaPreviewDiv.innerHTML='<video src="'+e.target.result+'" controls style="max-width:100%;border-radius:6px;"></video>';
+            } else if(file.type.startsWith('audio/')){
+              mediaPreviewDiv.innerHTML='<audio src="'+e.target.result+'" controls style="width:100%;"></audio>';
+            } else {
+              mediaPreviewDiv.innerHTML='<div style="padding:10px;border:1px solid #ddd;border-radius:6px;"><strong>📄 '+file.name+'</strong><br><small>'+file.type+'</small></div>';
+            }
+            setVisible(mediaPreviewDiv,true); 
+          }; 
+          reader.readAsDataURL(file); 
+        } else { 
+          mediaPreviewDiv.innerHTML=''; 
+          setVisible(mediaPreviewDiv,false); 
+        }
+      }
+
+      // Excel Modal Functions
+      function openExcelModal() {
+        console.log('Opening Excel modal...');
+        excelModal.classList.remove('hidden');
+        selectedExcelFile = null;
+        selectedFileInfo.classList.add('hidden');
+        confirmExcelSelection.disabled = true;
+      }
+
+      function closeExcelModalFn() {
+        console.log('Closing Excel modal...');
+        excelModal.classList.add('hidden');
+        hiddenExcelInput.value = '';
+        resetWizard();
+      }
+
+      function resetWizard() {
+        currentStep = 1;
+        selectedExcelFile = null;
+        excelData = null;
+        headerRowIndex = 1;
+        columnMappings = {};
+        updateWizardSteps();
+        showWizardStep(1);
+        nextStepBtn.disabled = true;
+        nextStepBtn.style.display = 'inline-block';
+        confirmExcelSelection.style.display = 'none';
+        prevStepBtn.style.display = 'none';
+      }
+
+      function updateWizardSteps() {
+        const steps = document.querySelectorAll('.wizard-steps .step');
+        steps.forEach((step, index) => {
+          const stepNumber = index + 1;
+          step.classList.remove('active', 'completed');
+          if (stepNumber < currentStep) {
+            step.classList.add('completed');
+          } else if (stepNumber === currentStep) {
+            step.classList.add('active');
+          }
+        });
+      }
+
+      function showWizardStep(step) {
+        // Hide all wizard content
+        document.querySelectorAll('.wizard-content').forEach(content => {
+          content.classList.remove('active');
+          content.classList.add('hidden');
+        });
+        
+        // Show current step
+        const stepElement = document.getElementById(`step${step}`);
+        if (stepElement) {
+          stepElement.classList.add('active');
+          stepElement.classList.remove('hidden');
+        }
+        
+        currentStep = step;
+        updateWizardSteps();
+        updateWizardButtons();
+      }
+
+      function updateWizardButtons() {
+        // Previous button
+        prevStepBtn.style.display = currentStep > 1 ? 'inline-block' : 'none';
+        
+        // Next/Proceed button
+        if (currentStep === 4) {
+          nextStepBtn.style.display = 'none';
+          confirmExcelSelection.style.display = 'inline-block';
+          confirmExcelSelection.disabled = false;
+        } else {
+          nextStepBtn.style.display = 'inline-block';
+          confirmExcelSelection.style.display = 'none';
+          
+          // Enable/disable next based on current step validation
+          switch (currentStep) {
+            case 1:
+              nextStepBtn.disabled = !selectedExcelFile;
+              break;
+            case 2:
+              nextStepBtn.disabled = !excelData;
+              break;
+            case 3:
+              nextStepBtn.disabled = Object.keys(columnMappings).length === 0;
+              break;
+            default:
+              nextStepBtn.disabled = false;
+          }
+        }
+      }
+
+      function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      }
+
+      function handleFileSelection(file) {
+        if (!file) return;
+        
+        // Validate file type
+        const validTypes = ['.xlsx', '.xls', '.csv'];
+        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+        if (!validTypes.includes(fileExt)) {
+          alert('Please select a valid Excel (.xlsx, .xls) or CSV file.');
+          return;
+        }
+
+        selectedExcelFile = file;
+        
+        // Show file info
+        selectedFileInfo.innerHTML = `
+          <div class="file-info">
+            <div class="file-info-icon">📊</div>
+            <div class="file-info-details">
+              <div class="file-info-name">${file.name}</div>
+              <div class="file-info-size">${formatFileSize(file.size)}</div>
+            </div>
+          </div>
+        `;
+        selectedFileInfo.classList.remove('hidden');
+        
+        // Enable next step
+        updateWizardButtons();
+        
+        // Parse file for preview (basic CSV parsing for demo)
+        parseExcelFile(file);
+      }
+
+      function parseExcelFile(file) {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          try {
+            const data = e.target.result;
+            
+            if (file.name.toLowerCase().endsWith('.csv')) {
+              // Handle CSV files
+              const text = new TextDecoder().decode(data);
+              const lines = text.split('\n').filter(line => line.trim());
+              excelData = lines.map(line => {
+                // Enhanced CSV parsing with better quote handling
+                const cells = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                  const char = line[i];
+                  const nextChar = line[i + 1];
+                  
+                  if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                      // Escaped quote inside quoted field
+                      current += '"';
+                      i++; // Skip next quote
+                    } else {
+                      inQuotes = !inQuotes;
+                    }
+                  } else if (char === ',' && !inQuotes) {
+                    cells.push(current.trim());
+                    current = '';
+                  } else {
+                    current += char;
+                  }
+                }
+                cells.push(current.trim());
+                return cells;
+              });
+              
+              // Filter out completely empty rows
+              excelData = excelData.filter(row => 
+                row.some(cell => cell !== null && cell !== undefined && cell.toString().trim() !== '')
+              );
+              
+              console.log('✅ CSV data parsed successfully:', excelData.length + ' rows');
+              console.log('📋 First few rows:', excelData.slice(0, 3));
+              updateWizardButtons();
+              
+            } else {
+              // For Excel files, send to main process for parsing
+              const buffer = Buffer.from(data);
+              
+              // Send to main process for Excel parsing
+              ipcRenderer.send('parse-excel-file', {
+                fileName: file.name,
+                buffer: buffer
+              });
+              
+              // Listen for parsed result
+              ipcRenderer.once('parse-excel-file-response', (event, response) => {
+                if (response.success) {
+                  excelData = response.data;
+                  originalFilePath = response.originalFilePath;
+                  console.log('✅ Excel data parsed successfully:', excelData.length + ' rows');
+                  console.log('📋 First few rows:', excelData.slice(0, 3));
+                  updateWizardButtons();
+                } else {
+                  console.error('❌ Error parsing Excel:', response.error);
+                  alert('Error parsing Excel file: ' + response.error);
+                }
+              });
+            }
+            
+          } catch (error) {
+            console.error('Error reading file:', error);
+            alert('Error reading file: ' + error.message + '. Please check the file format and try again.');
+          }
+        };
+        
+        reader.onerror = function() {
+          alert('Error reading file. Please try again.');
+        };
+        
+        // Read file as ArrayBuffer
+        reader.readAsArrayBuffer(file);
+      }
+
+      function nextStep() {
+        if (currentStep < 4) {
+          switch (currentStep) {
+            case 1:
+              if (selectedExcelFile) {
+                currentStep = 2;
+                showStep2();
+              }
+              break;
+            case 2:
+              currentStep = 3;
+              showStep3();
+              break;
+            case 3:
+              currentStep = 4;
+              showStep4();
+              break;
+          }
+          showWizardStep(currentStep);
+        }
+      }
+
+      function prevStep() {
+        if (currentStep > 1) {
+          currentStep--;
+          showWizardStep(currentStep);
+        }
+      }
+
+      function showStep2() {
+        if (excelData && excelData.length > 0) {
+          let previewHtml = '<table class="excel-table">';
+          for (let i = 0; i < Math.min(5, excelData.length); i++) {
+            const isHeaderRow = i === (headerRowIndex - 1);
+            previewHtml += `<tr ${isHeaderRow ? 'style="background:#e6f0ff;font-weight:bold"' : ''}>`;
+            excelData[i].forEach(cell => {
+              previewHtml += `<td>${cell}</td>`;
+            });
+            previewHtml += '</tr>';
+          }
+          previewHtml += '</table>';
+          excelPreview.innerHTML = previewHtml;
+        }
+        
+        headerRowSelect.onchange = () => {
+          headerRowIndex = parseInt(headerRowSelect.value);
+          showStep2();
+        };
+      }
+
+      function showStep3() {
+        if (excelData && headerRowIndex <= excelData.length) {
+          const headers = excelData[headerRowIndex - 1];
+          const requiredFields = ['Phone', 'Name', 'var1', 'var2', 'var3', 'var4', 'var5', 'var6'];
+          
+          let mappingHtml = '';
+          requiredFields.forEach(field => {
+            mappingHtml += `
+              <div class="mapping-row">
+                <div style="flex:1;font-weight:500">${field}</div>
+                <div class="mapping-arrow">→</div>
+                <select class="mapping-select" data-field="${field}">
+                  <option value="">Select Column</option>
+                  ${headers.map((header, index) => `<option value="${index}">${header}</option>`).join('')}
+                </select>
+              </div>
+            `;
+          });
+          
+          columnMapping.innerHTML = mappingHtml;
+          
+          columnMapping.addEventListener('change', updateColumnMappings);
+          updateColumnMappings();
+        }
+      }
+
+      function updateColumnMappings() {
+        columnMappings = {};
+        columnMapping.querySelectorAll('.mapping-select').forEach(select => {
+          if (select.value) {
+            columnMappings[select.dataset.field] = parseInt(select.value);
+          }
+        });
+        
+        if (Object.keys(columnMappings).length > 0) {
+          showMappingPreview();
+        }
+        updateWizardButtons();
+      }
+
+      function showMappingPreview() {
+        if (!excelData || Object.keys(columnMappings).length === 0) return;
+        
+        let previewHtml = '<table class="excel-table"><thead><tr>';
+        Object.keys(columnMappings).forEach(field => {
+          previewHtml += `<th>${field}</th>`;
+        });
+        previewHtml += '</tr></thead><tbody>';
+        
+        for (let i = headerRowIndex; i < Math.min(headerRowIndex + 5, excelData.length); i++) {
+          previewHtml += '<tr>';
+          Object.keys(columnMappings).forEach(field => {
+            const colIndex = columnMappings[field];
+            previewHtml += `<td>${excelData[i][colIndex] || ''}</td>`;
+          });
+          previewHtml += '</tr>';
+        }
+        
+        previewHtml += '</tbody></table>';
+        mappingPreview.innerHTML = previewHtml;
+      }
+
+      function showStep4() {
+        let validationHtml = '';
+        let totalRows = excelData.length - headerRowIndex;
+        const requiredFields = ['Phone', 'Name', 'var1', 'var2', 'var3', 'var4', 'var5', 'var6'];
+        
+        validationHtml += `<div class="validation-item validation-success">✓ ${totalRows} rows detected</div>`;
+        validationHtml += `<div class="validation-item validation-success">✓ ${Object.keys(columnMappings).length} columns mapped</div>`;
+        
+        // Check required fields
+        const missingRequired = [];
+        if (columnMappings.Phone) {
+          validationHtml += `<div class="validation-item validation-success">✓ Phone column mapped</div>`;
+        } else {
+          validationHtml += `<div class="validation-item validation-error">✗ Phone column required</div>`;
+          missingRequired.push('Phone');
+        }
+        
+        if (columnMappings.Name) {
+          validationHtml += `<div class="validation-item validation-success">✓ Name column mapped</div>`;
+        } else {
+          validationHtml += `<div class="validation-item validation-warning">⚠ Name column recommended</div>`;
+        }
+        
+        // Check optional variable columns
+        const mappedVars = requiredFields.filter(field => field.startsWith('var') && columnMappings[field]);
+        if (mappedVars.length > 0) {
+          validationHtml += `<div class="validation-item validation-success">✓ ${mappedVars.length} variable columns mapped</div>`;
+        }
+        
+        // Data validation - check for empty phone numbers
+        if (columnMappings.Phone && excelData.length > headerRowIndex) {
+          const phoneColIndex = columnMappings.Phone;
+          let emptyPhones = 0;
+          for (let i = headerRowIndex; i < excelData.length; i++) {
+            const phoneValue = excelData[i][phoneColIndex];
+            if (!phoneValue || phoneValue.toString().trim() === '') {
+              emptyPhones++;
+            }
+          }
+          
+          if (emptyPhones > 0) {
+            validationHtml += `<div class="validation-item validation-warning">⚠ ${emptyPhones} rows have empty phone numbers</div>`;
+          } else {
+            validationHtml += `<div class="validation-item validation-success">✓ All phone numbers present</div>`;
+          }
+        }
+        
+        validationResults.innerHTML = validationHtml;
+        finalPreview.innerHTML = mappingPreview.innerHTML;
+      }
+
+      function openParsedDataModal() {
+        if (parsedExcelData) {
+          // Show info
+          parsedDataInfo.textContent = `Showing ${parsedExcelData.length - 1} data rows with ${parsedExcelData[0].length} columns`;
+          
+          // Show data in table
+          let tableHtml = '<table class="excel-table"><thead><tr>';
+          parsedExcelData[0].forEach(header => {
+            tableHtml += `<th>${header}</th>`;
+          });
+          tableHtml += '</tr></thead><tbody>';
+          
+          for (let i = 1; i < Math.min(101, parsedExcelData.length); i++) { // Show max 100 rows
+            tableHtml += '<tr>';
+            parsedExcelData[i].forEach(cell => {
+              tableHtml += `<td>${cell}</td>`;
+            });
+            tableHtml += '</tr>';
+          }
+          
+          if (parsedExcelData.length > 101) {
+            tableHtml += `<tr><td colspan="${parsedExcelData[0].length}" style="text-align:center;color:#666;font-style:italic;">... and ${parsedExcelData.length - 101} more rows</td></tr>`;
+          }
+          
+          tableHtml += '</tbody></table>';
+          parsedDataPreview.innerHTML = tableHtml;
+          
+          parsedDataModal.classList.remove('hidden');
+        }
+      }
+
+      function closeParsedDataModalFn() {
+        parsedDataModal.classList.add('hidden');
+      }
+
+      // Download sample Excel template
+      async function downloadSampleTemplate() {
+        try {
+          console.log('📥 Requesting sample template download...');
+          downloadSampleBtn.disabled = true;
+          downloadSampleBtn.innerHTML = '<span>⏳</span><span>Downloading...</span>';
+          
+          const result = await ipcRenderer.invoke('download-sample-template', 'MsgexcelTemplate.xlsx');
+          
+          if (result.success) {
+            alert(`✅ ${result.message}\n\nSaved to: ${result.filePath}`);
+          } else if (result.canceled) {
+            console.log('📥 Download canceled by user');
+          } else {
+            alert(`❌ Download failed:\n\n${result.error}`);
+          }
+        } catch (error) {
+          console.error('❌ Download sample template error:', error);
+          alert(`❌ Failed to download sample template:\n\n${error.message}`);
+        } finally {
+          downloadSampleBtn.disabled = false;
+          downloadSampleBtn.innerHTML = '<span>📥</span><span>Download Sample</span>';
+        }
+      }
+
+      function confirmExcelSelectionFn() {
+        if (selectedExcelFile && Object.keys(columnMappings).length > 0) {
+          // Read file to get buffer
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const buffer = Buffer.from(e.target.result);
+            
+            ipcRenderer.send('parse-excel-file', {
+              fileName: selectedExcelFile.name,
+              buffer: buffer,
+              columnMappings: columnMappings,
+              headerRowIndex: headerRowIndex
+            });
+          
+            ipcRenderer.once('parse-excel-file-response', (event, response) => {
+              if (response.success) {
+                parsedExcelData = response.mappedData;
+                mappedFilePath = response.mappedFilePath;
+                originalFilePath = response.originalFilePath;
+                
+                excelFileName.textContent = `📊 ${selectedExcelFile.name} (${parsedExcelData.length - 1} rows mapped)`;
+                hiddenExcelInput.files = createFileList(selectedExcelFile);
+                
+                // Show "View Parsed Data" button
+                viewParsedDataBtn.style.display = 'inline-block';
+                
+                closeExcelModalFn();
+                if(err.excelFile) err.excelFile.textContent = '';
+                
+                console.log('✅ Excel processing completed. Mapped file saved:', mappedFilePath);
+              } else {
+                alert('Error saving mapped data: ' + response.error);
+              }
+            });
+          };
+          
+          reader.readAsArrayBuffer(selectedExcelFile);
+        }
+      }
+
+      // Helper function to create FileList-like object
+      function createFileList(file) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        return dt.files;
+      }
+
+      async function loadTemplates(){ try{ const templates = await ipcRenderer.invoke('get-templates'); templateEl.innerHTML='<option value="">-- Select Template --</option>'; (templates||[]).filter(t=>t.is_delete==0).forEach(t=>{ const o=document.createElement('option'); o.value=t.name; o.textContent=t.name; templateEl.appendChild(o); }); } catch(e){ console.error(e) } }
+      async function loadProfiles(){ 
+        try{ 
+          const profiles = await ipcRenderer.invoke('get-profiles-list');
+          msOptions.innerHTML = '';
+          // Add 'All' option
+          const allOpt = document.createElement('div');
+          allOpt.className = 'ms-option';
+          allOpt.dataset.value = 'All';
+          allOpt.textContent = 'All (use all active profiles)';
+          msOptions.appendChild(allOpt);
+
+          (profiles||[]).forEach(n=>{
+            const o = document.createElement('div');
+            o.className = 'ms-option';
+            o.dataset.value = n;
+            o.textContent = n;
+            msOptions.appendChild(o);
+          });
+          renderSelectedChips();
+        }catch(e){console.error(e)} 
+      }
+
+      function renderSelectedChips(){
+        msSelected.innerHTML = '';
+        if(selectedProfilesSet.size === 0){ const ph = document.createElement('span'); ph.className='ms-placeholder'; ph.textContent='Select profiles...'; msSelected.appendChild(ph); return; }
+        // if All selected show a single chip
+        if(selectedProfilesSet.has('All')){
+          const chip = document.createElement('span'); chip.className='ms-chip'; chip.textContent = 'All'; msSelected.appendChild(chip); return;
+        }
+        for(const v of selectedProfilesSet){ const chip = document.createElement('span'); chip.className='ms-chip'; chip.textContent=v; msSelected.appendChild(chip); }
+      }
+
+      function toggleOptionValue(val){
+        if(val==='All'){
+          // selecting All clears other selections
+          if(selectedProfilesSet.has('All')) selectedProfilesSet.clear(); else { selectedProfilesSet.clear(); selectedProfilesSet.add('All'); }
+        } else {
+          if(selectedProfilesSet.has('All')) selectedProfilesSet.delete('All');
+          if(selectedProfilesSet.has(val)) selectedProfilesSet.delete(val); else selectedProfilesSet.add(val);
+        }
+        // update option classes
+        Array.from(msOptions.children).forEach(opt=>{ opt.classList.toggle('selected', selectedProfilesSet.has(opt.dataset.value)); });
+        renderSelectedChips();
+      }
+
+      // click handlers for dropdown options
+      msOptions.addEventListener('click', (e)=>{
+        const opt = e.target.closest('.ms-option'); if(!opt) return; const v = opt.dataset.value; toggleOptionValue(v);
+      });
+
+      // search filter
+      msSearch && msSearch.addEventListener('input', ()=>{
+        const q = (msSearch.value||'').toLowerCase().trim();
+        Array.from(msOptions.children).forEach(opt=>{
+          const text = (opt.textContent||'').toLowerCase();
+          opt.style.display = q ? (text.includes(q) ? '' : 'none') : '';
+        });
+      });
+
+      // toggle dropdown when clicking the selected area
+      msSelected.addEventListener('click', (e)=>{ e.stopPropagation(); msDropdown.classList.toggle('hidden'); if(!msDropdown.classList.contains('hidden')) msSearch && msSearch.focus(); });
+      // close dropdown on outside click
+      document.addEventListener('click', (e)=>{ if(!profilesContainer.contains(e.target)) msDropdown.classList.add('hidden'); });
+
+      function getSelectedProfiles(){
+        if(selectedProfilesSet.size===0) return [];
+        if(selectedProfilesSet.has('All')) return ['All'];
+        return Array.from(selectedProfilesSet);
+      }
+
+      window.addEventListener('DOMContentLoaded', ()=>{ 
+        loadTemplates(); 
+        loadProfiles(); 
+        updateVisibility(false); // Don't clear fields on initial load
+        updatePreview(); // Set initial preview
+        // small polling as fallback for environments where select change doesn't fire reliably
+        try {
+          let last = messageTypeEl ? messageTypeEl.value : null;
+          const poll = setInterval(()=>{
+            if (!messageTypeEl) return;
+            if (messageTypeEl.value !== last) {
+              last = messageTypeEl.value;
+              updateVisibility();
+            }
+          }, 250);
+          // stop polling after 15s to save resources
+          setTimeout(()=> clearInterval(poll), 15000);
+        } catch(e) { console.error('poll setup failed', e.message); }
+      });
+
+      // interactions
+      // listen for both change and input events to ensure visibility updates across platforms
+      if (messageTypeEl) {
+        messageTypeEl.addEventListener('change', ()=>{ updateVisibility(true); if(err.messageType) err.messageType.textContent=''; });
+        messageTypeEl.addEventListener('input', ()=>{ updateVisibility(true); if(err.messageType) err.messageType.textContent=''; });
+      }
+      mediaFileEl && mediaFileEl.addEventListener('change', ()=>{ previewMedia(); updatePreview(); err.mediaFile.textContent=''; });
+      templateEl && templateEl.addEventListener('change', ()=>{ updatePreview(); });
+      textMessageEl && textMessageEl.addEventListener('input', ()=>{ updatePreview(); });
+
+      // Excel Modal Event Listeners
+      selectExcelBtn && selectExcelBtn.addEventListener('click', (e) => {
+        console.log('Select Excel button clicked');
+        e.preventDefault();
+        openExcelModal();
+      });
+      closeExcelModal && closeExcelModal.addEventListener('click', (e) => {
+        console.log('Close modal X clicked');
+        e.preventDefault();
+        closeExcelModalFn();
+      });
+      cancelExcelSelection && cancelExcelSelection.addEventListener('click', (e) => {
+        console.log('Cancel button clicked');
+        e.preventDefault();
+        closeExcelModalFn();
+      });
+      confirmExcelSelection && confirmExcelSelection.addEventListener('click', confirmExcelSelectionFn);
+      nextStepBtn && nextStepBtn.addEventListener('click', nextStep);
+      prevStepBtn && prevStepBtn.addEventListener('click', prevStep);
+      viewParsedDataBtn && viewParsedDataBtn.addEventListener('click', openParsedDataModal);
+      closeParsedDataModal && closeParsedDataModal.addEventListener('click', closeParsedDataModalFn);
+      closeParsedDataModalBtn && closeParsedDataModalBtn.addEventListener('click', closeParsedDataModalFn);
+      downloadSampleBtn && downloadSampleBtn.addEventListener('click', downloadSampleTemplate);
+
+      // File drop zone events
+      fileDropZone && fileDropZone.addEventListener('click', (e) => {
+        // If clicked on button, trigger file input
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+          e.stopPropagation();
+          hiddenExcelInput.click();
+        } else {
+          // If clicked anywhere else in drop zone, also trigger file input
+          hiddenExcelInput.click();
+        }
+      });
+      fileDropZone && fileDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        fileDropZone.classList.add('dragover');
+      });
+      fileDropZone && fileDropZone.addEventListener('dragleave', () => {
+        fileDropZone.classList.remove('dragover');
+      });
+      fileDropZone && fileDropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        fileDropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) handleFileSelection(files[0]);
+      });
+
+      hiddenExcelInput && hiddenExcelInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files.length > 0) handleFileSelection(files[0]);
+      });
+
+      // Close modal on overlay click
+      excelModal && excelModal.addEventListener('click', (e) => {
+        // Close if clicked on overlay background (not on modal content)
+        if (e.target === excelModal || e.target.classList.contains('modal-overlay')) {
+          closeExcelModalFn();
+        }
+      });
+
+      // save file helper (keeps existing IPC contract)
+      function saveFile(file, channel){ return new Promise((resolve)=>{ if(!file) return resolve({ success:true, path: null }); const reader=new FileReader(); reader.onload = (ev)=>{ const buffer = Buffer.from(ev.target.result); ipcRenderer.send(channel, { name: file.name, buffer }); ipcRenderer.once(channel + '-response', (e, response)=> resolve(response)); }; reader.onerror=()=> resolve({ success:false }); reader.readAsArrayBuffer(file); }); }
+
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault(); if(!validateForm()){ alert('Please fix the errors and try again.'); return; }
+        const fd = new FormData(form); 
+        const excelFile = hiddenExcelInput.files[0]; // Use hidden input file
+        const mediaFile = mediaFileEl.files[0];
+        const data = { 
+          messageType: fd.get('messageType'), 
+          template: fd.get('template'), 
+          profiles: getSelectedProfiles(), 
+          textMessage: fd.get('textMessage'), 
+          excelFile: null, 
+          mediaFile: null, 
+          scheduletime: fd.get('scheduletime'), 
+          actualtime: fd.get('scheduletimess') 
+        };
+
+        // Use mapped file path if available, otherwise save original file
+        if (mappedFilePath) {
+          data.excelFile = mappedFilePath;
+          console.log('🎯 Using mapped Excel file:', mappedFilePath);
+        } else {
+          const excelResp = await saveFile(excelFile, 'save-excel-file'); 
+          if(!excelResp.success){ alert('Failed to save Excel file'); return; } 
+          if(excelResp.path) data.excelFile = excelResp.path;
+        }
+        
+        const mediaResp = await saveFile(mediaFile, 'save-media-file'); 
+        if(!mediaResp.success){ alert('Failed to save Media file'); return; } 
+        if(mediaResp.path) data.mediaFile = mediaResp.path;
+
+        ipcRenderer.send('send-message-proc', data);
+      });
+
+      document.getElementById('previewBtn').addEventListener('click', ()=>{
+        updatePreview(); // Just update the preview
+      });
+
+      // Diagnostics: show current element states in console and on page
+      const diagBtn = document.getElementById('diagBtn');
+      if (diagBtn) {
+        diagBtn.addEventListener('click', ()=>{
+          const info = {
+            messageType: messageTypeEl ? messageTypeEl.value : null,
+            templateDiv_display: templateDiv ? templateDiv.style.display || getComputedStyle(templateDiv).display : null,
+            imageDiv_display: imageDiv ? imageDiv.style.display || getComputedStyle(imageDiv).display : null,
+            textDiv_display: textDiv ? textDiv.style.display || getComputedStyle(textDiv).display : null,
+            template_exists: !!templateEl,
+              profiles_selected: getSelectedProfiles()
+          };
+          console.info('[scheduleMsg][diagnostics]', info);
+          if (dbgStatus) { dbgStatus.style.display='block'; dbgStatus.textContent = JSON.stringify(info); }
+          alert('Diagnostics printed to console and shown on page.');
+        });
+      }
+
+      ipcRenderer.on('send-message-response', (event, response)=>{
+        try {
+          if(response && response.success){
+            // Show the queued/success alert to the user
+            alert(response.message || 'Sent / Scheduled');
+            // If this is the queued acknowledgement (jobId present), close the popup after user clicked OK
+            if(response.jobId){
+              try { window.close(); } catch(e) { console.error('Failed to close window from renderer:', e && e.message); }
+            }
+          } else {
+            alert('Error: ' + (response && response.message || 'Unknown'))
+          }
+        } catch (e) {
+          console.error('send-message-response handler error:', e && e.message);
+        }
+      });
+
+      // Handle daily limit reached alerts for bulk messaging
+      ipcRenderer.on("daily-limit-reached", (event, data) => {
+        const { profileName, dailyLimit, sentToday, message, skippedCount } = data;
+        
+        let alertMessage = `⚠️ DAILY LIMIT REACHED\n\n`;
+        alertMessage += `Profile: ${profileName}\n`;
+        alertMessage += `Daily Limit: ${dailyLimit} messages\n`;
+        alertMessage += `Already Sent Today: ${sentToday} messages\n\n`;
+        alertMessage += message;
+        
+        if (skippedCount && skippedCount > 0) {
+          alertMessage += `\n\n📊 Impact: ${skippedCount} bulk messages skipped for this profile`;
+        }
+        
+        alertMessage += `\n\n💡 Tip: You can adjust daily limits in the profile settings or wait until tomorrow to continue sending.`;
+        
+        alert(alertMessage);
+      });
+
+    })();
+  </script>
+</body>
+</html>
