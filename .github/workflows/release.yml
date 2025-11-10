@@ -6,13 +6,17 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-and-publish:
     name: Build (Windows NSIS) and publish
     runs-on: windows-latest
     env:
-      # GH_TOKEN must be provided as a repository secret (personal access token with repo scope)
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      # Use the built-in GITHUB_TOKEN so you don't need a separate PAT in repository secrets
+      # The workflow needs write permission on contents to create/upload releases (set above)
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Optional: Windows code signing certificate (PFX) as a base64-encoded artifact
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -39,7 +43,7 @@ jobs:
         # Using --publish=always will upload artifacts to GitHub Releases using GH_TOKEN
         run: npm run dist:nsis -- --publish=always
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
