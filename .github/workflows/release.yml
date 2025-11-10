@@ -47,6 +47,21 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
+      - name: List build output folders (for debugging)
+        run: |
+          echo "Listing release and dist folders"
+          if (Test-Path release) { Get-ChildItem -Recurse release } else { echo "no release dir" }
+          if (Test-Path dist) { Get-ChildItem -Recurse dist } else { echo "no dist dir" }
+        shell: pwsh
+
+      - name: Upload built installers (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          path: |
+            dist/**
+            release/**
+
       - name: Upload build artifact (fallback)
         if: failure()
         uses: actions/upload-artifact@v4
