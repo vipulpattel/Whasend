@@ -114,6 +114,37 @@
       </div>
     </div>
 
+    <!-- Resend Modal -->
+    <div id="resendModal" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:9999">
+      <div style="background:#fff;border-radius:8px;padding:16px;max-width:900px;width:90%;max-height:80%;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,0.2)">
+        <h3>Resend Failed Messages <span id="resendJobId" style="font-weight:400;font-size:13px;color:#666"></span></h3>
+        <div id="resendList" style="max-height:400px;overflow:auto;margin-top:8px"></div>
+        <div style="margin-top:8px;text-align:right">
+          <button id="resendCancelBtn">Cancel</button>
+          <button id="resendSendBtn" style="background:#0b74de;color:#fff;border:none;padding:8px 12px;border-radius:6px;">Send Selected</button>
+        </div>
+        <div id="resendProgress" style="margin-top:8px;font-size:13px;color:#333;display:none"></div>
+      </div>
+    </div>
+
+    <!-- View Report Modal -->
+    <div id="viewReportModal" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:9999">
+      <div style="background:#fff;border-radius:8px;padding:16px;max-width:1000px;width:95%;max-height:85%;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,0.2)">
+        <h3>Report Records <span id="viewReportJobId" style="font-weight:400;font-size:13px;color:#666"></span></h3>
+        <div style="margin-top:8px;margin-bottom:8px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+          <div>
+            <label class="small">Filter:</label>
+            <input id="viewReportFilter" placeholder="Filter by name/phone/status/template" style="padding:6px;border:1px solid #ddd;border-radius:6px;width:360px" />
+          </div>
+          <div style="text-align:right">
+            <button id="exportReportBtn" style="background:#0b74de;color:#fff;border:none;padding:8px 12px;border-radius:6px;">Export to Excel</button>
+            <button id="closeViewReportBtn" style="margin-left:8px">Close</button>
+          </div>
+        </div>
+        <div id="viewReportList" style="max-height:520px;overflow:auto;border-top:1px solid #eee;padding-top:8px"></div>
+      </div>
+    </div>
+
     <script>
       const { ipcRenderer, shell } = require('electron');
       const reportsContainer = document.getElementById('reportsContainer');
@@ -390,21 +421,19 @@
           </div>
           <div style="margin-top:10px">
             <div class="progress"><i style="width:${pct}%"></i></div>
-            <div style="display:flex;justify-content:space-between;margin-top:6px"><div class="small">Sent: ${r.record_sent}/${r.record_total} (${pct}%)</div><div class="small">Failed: ${r.record_failed||0}</div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px">
+              <div class="small">Sent: ${r.record_sent}/${r.record_total} (${pct}%)</div>
+              <div class="small">Failed: ${r.record_failed||0} • Not WhatsApp: ${r.record_not_whatsapp || 0}</div>
+            </div>
           </div>
         `;
 
         const controls = document.createElement('div');
         controls.className = 'controls';
 
-        const openBtn = document.createElement('button'); openBtn.textContent='📁 Open';
-        openBtn.onclick = () => {
-          if (r.path) shell.openPath(r.path).catch(e=>alert('Open failed: '+e.message));
-        };
-
-        const downloadBtn = document.createElement('button'); downloadBtn.textContent='📥 Save As';
-        downloadBtn.onclick = () => {
-          if (r.path) ipcRenderer.invoke('save-excel-as', r.path).then(res=>{ if (res && res.success) alert('Saved to '+res.path); else alert('Save failed'); });
+        const viewBtn = document.createElement('button'); viewBtn.textContent='� View Report';
+        viewBtn.onclick = () => {
+          openViewReportModal(r.id);
         };
 
         const pauseBtn = document.createElement('button'); pauseBtn.textContent = r.paused ? '▶ Resume' : '⏸ Pause';
@@ -422,7 +451,7 @@
         const cancelBtn = document.createElement('button'); cancelBtn.textContent='❌ Cancel';
         cancelBtn.onclick = ()=>{ if (confirm('Cancel this job?')) ipcRenderer.send('cancel-job', r.id); };
 
-        // Show pause/resume and cancel buttons for active jobs (both running and paused)
+  // Show pause/resume and cancel buttons for active jobs (both running and paused)
         const statusLower = (r.status || '').toString().toLowerCase();
         const showControlsForActiveJobs = statusLower === 'in_progress' || 
                                          statusLower === 'in progress' || 
@@ -434,16 +463,20 @@
                              statusLower === 'cancelled' || 
                              statusLower === 'failed';
 
-        // Only show Open/Save buttons when a path is available
-        if (r.path) {
-          controls.appendChild(openBtn);
-          controls.appendChild(downloadBtn);
-        }
+        // Show "View Report" button for every job (opens modal with all records)
+        controls.appendChild(viewBtn);
         
         // Show pause/resume and cancel buttons only for active jobs (not finished)
         if (showControlsForActiveJobs && !isFinishedJob) {
           controls.appendChild(pauseBtn);
           controls.appendChild(cancelBtn);
+        }
+        // If the job is finished and has failures, show "Resend Failed" button
+        if (isFinishedJob && (r.record_failed || 0) > 0) {
+          const resendBtn = document.createElement('button');
+          resendBtn.textContent = '🔁 Resend Failed';
+          resendBtn.onclick = () => openResendModal(r.id);
+          controls.appendChild(resendBtn);
         }
         card.appendChild(controls);
 
@@ -604,6 +637,184 @@
           }
         });
       }
+
+      // Resend modal helpers
+      const resendModal = document.getElementById('resendModal');
+      const resendList = document.getElementById('resendList');
+      const resendJobIdEl = document.getElementById('resendJobId');
+      const resendSendBtn = document.getElementById('resendSendBtn');
+      const resendCancelBtn = document.getElementById('resendCancelBtn');
+      const resendProgress = document.getElementById('resendProgress');
+
+      // View Report modal helpers
+      const viewReportModal = document.getElementById('viewReportModal');
+      const viewReportList = document.getElementById('viewReportList');
+      const viewReportJobIdEl = document.getElementById('viewReportJobId');
+      const exportReportBtn = document.getElementById('exportReportBtn');
+      const closeViewReportBtn = document.getElementById('closeViewReportBtn');
+      const viewReportFilter = document.getElementById('viewReportFilter');
+
+      let currentViewRows = [];
+
+      function openViewReportModal(jobId) {
+        viewReportJobIdEl.textContent = jobId;
+        viewReportList.innerHTML = '<div class="small">Loading records...</div>';
+        viewReportFilter.value = '';
+        viewReportModal.style.display = 'flex';
+
+        ipcRenderer.invoke('get-report-records', jobId).then(rows => {
+          currentViewRows = rows || [];
+          renderViewReportList(currentViewRows);
+        }).catch(e => {
+          viewReportList.innerHTML = '<div class="small">Failed to load records</div>';
+        });
+      }
+
+      function closeViewReportModal() {
+        viewReportModal.style.display = 'none';
+        viewReportList.innerHTML = '';
+        currentViewRows = [];
+      }
+
+      function renderViewReportList(rows) {
+        if (!rows || rows.length === 0) {
+          viewReportList.innerHTML = '<div class="small">No records for this report</div>';
+          return;
+        }
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.innerHTML = `
+          <thead><tr style="background:#f7fafc"><th style="padding:8px;border-bottom:1px solid #eee">Name</th><th style="padding:8px;border-bottom:1px solid #eee">Phone</th><th style="padding:8px;border-bottom:1px solid #eee">Profile</th><th style="padding:8px;border-bottom:1px solid #eee">Status</th><th style="padding:8px;border-bottom:1px solid #eee">Sent At</th><th style="padding:8px;border-bottom:1px solid #eee">Error</th><th style="padding:8px;border-bottom:1px solid #eee">Message</th></tr></thead>
+          <tbody></tbody>
+        `;
+        const tbody = table.querySelector('tbody');
+        rows.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #eee';
+          tr.innerHTML = `
+            <td style="padding:8px;vertical-align:top">${escapeHtml(r.name||'')}</td>
+            <td style="padding:8px;vertical-align:top">${escapeHtml(r.phone||'')}</td>
+            <td style="padding:8px;vertical-align:top">${escapeHtml(r.profile||'')}</td>
+            <td style="padding:8px;vertical-align:top">${escapeHtml(r.status||'')}</td>
+            <td style="padding:8px;vertical-align:top">${escapeHtml(r.sent_at||'')}</td>
+            <td style="padding:8px;vertical-align:top;color:#a00">${escapeHtml(r.error||'')}</td>
+            <td style="padding:8px;vertical-align:top">${escapeHtml((r.message||'').toString().substring(0,200))}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+        viewReportList.innerHTML = '';
+        viewReportList.appendChild(table);
+      }
+
+      // simple escape for HTML
+      function escapeHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      closeViewReportBtn.addEventListener('click', () => closeViewReportModal());
+      exportReportBtn.addEventListener('click', async () => {
+        const jobId = viewReportJobIdEl.textContent;
+        if (!jobId) return alert('No job id');
+        exportReportBtn.disabled = true; exportReportBtn.textContent = 'Exporting...';
+        try {
+          const res = await ipcRenderer.invoke('export-report-records', { jobId });
+          if (res && res.success) {
+            alert('Exported to ' + res.path);
+          } else {
+            alert('Export failed: ' + (res && res.error ? res.error : 'unknown'));
+          }
+        } catch (e) { alert('Export failed: ' + e.message); }
+        exportReportBtn.disabled = false; exportReportBtn.textContent = 'Export to Excel';
+      });
+
+      viewReportFilter.addEventListener('input', debounce(() => {
+        const q = (viewReportFilter.value||'').toLowerCase().trim();
+        if (!q) renderViewReportList(currentViewRows);
+        else {
+          const filtered = currentViewRows.filter(r => ((r.name||'') + ' ' + (r.phone||'') + ' ' + (r.status||'') + ' ' + (r.template||'') + ' ' + (r.error||'')).toLowerCase().includes(q));
+          renderViewReportList(filtered);
+        }
+      }, 250));
+
+      function openResendModal(jobId) {
+        resendJobIdEl.textContent = jobId;
+        resendList.innerHTML = '<div class="small">Loading failed messages...</div>';
+        resendProgress.style.display = 'none';
+        resendModal.style.display = 'flex';
+
+        ipcRenderer.invoke('get-failed-message-logs', jobId).then(rows => {
+          renderResendList(rows || []);
+        }).catch(e => {
+          resendList.innerHTML = '<div class="small">Failed to load failed messages</div>';
+        });
+      }
+
+      function closeResendModal() {
+        resendModal.style.display = 'none';
+        resendList.innerHTML = '';
+      }
+
+      function renderResendList(rows) {
+        if (!rows || rows.length === 0) {
+          resendList.innerHTML = '<div class="small">No failed messages for this job</div>';
+          return;
+        }
+        const frag = document.createDocumentFragment();
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        rows.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #eee';
+          const td0 = document.createElement('td'); td0.style.padding='8px'; td0.style.width='36px';
+          const cb = document.createElement('input'); cb.type='checkbox'; cb.dataset.id = r.id; cb.checked = true;
+          td0.appendChild(cb);
+          const td1 = document.createElement('td'); td1.style.padding='8px'; td1.innerHTML = `<div style="font-weight:600">${r.name || '-'}</div><div class="small">${r.phone || ''} • ${r.profile || ''}</div>`;
+          const td2 = document.createElement('td'); td2.style.padding='8px'; td2.style.width='220px'; td2.innerHTML = `<div class="small">${(r.template||'-')}<div style="color:#a00">${r.error||''}</div></div>`;
+          tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2);
+          // attach full row data for later resend
+          tr.__row = r;
+          frag.appendChild(tr);
+        });
+        resendList.innerHTML = '';
+        resendList.appendChild(table);
+        table.appendChild(frag);
+      }
+
+      resendCancelBtn.addEventListener('click', () => closeResendModal());
+
+      resendSendBtn.addEventListener('click', () => {
+        // Collect selected rows
+        const checkboxes = resendList.querySelectorAll('input[type=checkbox]');
+        const ids = [];
+        const rows = [];
+        checkboxes.forEach(cb => {
+          if (cb.checked) ids.push(cb.dataset.id);
+        });
+        if (ids.length === 0) { alert('Select at least one failed message to resend'); return; }
+
+        // Disable UI while resending
+        resendSendBtn.disabled = true; resendCancelBtn.disabled = true;
+        resendProgress.style.display = 'block'; resendProgress.textContent = `Preparing to resend ${ids.length} messages...`;
+
+        // Request main process to resend by ids
+        ipcRenderer.send('resend-failed-message-logs', { ids });
+
+        ipcRenderer.on('resend-failed-progress', (e, data) => {
+          resendProgress.textContent = `Resend progress: ${data.processed}/${data.total} — Sent: ${data.sent} — Failed: ${data.failed}`;
+        });
+
+        ipcRenderer.once('resend-failed-response', (e, res) => {
+          resendSendBtn.disabled = false; resendCancelBtn.disabled = false;
+          if (res && res.success) {
+            resendProgress.textContent = `Done — Processed: ${res.processed}, Sent: ${res.sent}, Failed: ${res.failed}`;
+            // refresh reports after short delay
+            setTimeout(() => { loadAll(); closeResendModal(); }, 800);
+          } else {
+            resendProgress.textContent = `Resend failed: ${res && res.message ? res.message : 'Unknown error'}`;
+          }
+        });
+      });
+
 
       async function loadDailyStats() {
         try {

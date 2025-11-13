@@ -2972,6 +2972,12 @@ ipcMain.on('save-image-file', (event, fileData) => {
   saveFile(event, fileData, 'uploadedImages', 'save-image-file-response');
 });
 
+// Backwards-compatible handler: some renderers send 'save-media-file'
+// so respond on 'save-media-file-response' and save into same uploadedImages folder
+ipcMain.on('save-media-file', (event, fileData) => {
+  saveFile(event, fileData, 'uploadedImages', 'save-media-file-response');
+});
+
 // Comprehensive Profile Rename Handler
 ipcMain.handle('rename-profile-comprehensive', async (event, { oldName, newName }) => {
   try {
@@ -3281,7 +3287,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
   
   const profileName = data.profiles[0];
   const excelPath = data.excelFile;
-  const imagePath = data.imageFile;
+  // Accept multiple possible keys sent from various renderers for media path
+  // older code/renderer used `mediaFile`, newer expects `imageFile` — support both
+  let imagePath = data.imageFile || data.mediaFile || data.media_path || data.mediaFilePath || null;
   const messageType = data.messageType; // 'text', 'image', 'textWithImage'
   const template = data.template;
   const textMessage = data.textMessage;
@@ -3520,11 +3528,17 @@ ipcMain.on("send-message-proc", async (event, data) => {
 
       // Prepare media/template once for the run
       let media = null;
-      if (messageType === "image" || messageType === "textWithImage" || messageType === "imageWithText") {
+      // Track the actual media file path and filename used for this job so we can log/resend later
+      let preparedMediaPath = null;
+      let preparedMediaFilename = null;
+      // Accept several synonyms from different UIs: 'media' (new), 'image' (legacy), and combined types
+      if (messageType === "media" || messageType === "image" || messageType === "textWithImage" || messageType === "imageWithText") {
         if (!imagePath || !fs.existsSync(imagePath)) {
           throw new Error("Image file not found or not provided.");
         }
         media = MessageMedia.fromFilePath(imagePath);
+        preparedMediaPath = imagePath;
+        try { preparedMediaFilename = path.basename(preparedMediaPath); } catch (e) { preparedMediaFilename = null; }
         console.log(`Image loaded from: ${imagePath}`);
       }
       
@@ -4008,7 +4022,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
               phone: item.number,
               profile: item.profileName,
               template: template || null,
-              message: messageContent || null,
+                message: messageContent || null,
+                media_path: preparedMediaPath || null,
+                media_filename: preparedMediaFilename || null,
               status: 'Sent',
               sent_at: getLocalISOString(),
               error: ''
@@ -4123,6 +4139,8 @@ ipcMain.on("send-message-proc", async (event, data) => {
             profile: item.profileName,
             template: template || null,
             message: textMessage || null,
+            media_path: preparedMediaPath || null,
+            media_filename: preparedMediaFilename || null,
             status: 'Failed',
             sent_at: getLocalISOString(),
             error: displayError
@@ -4174,6 +4192,8 @@ ipcMain.on("send-message-proc", async (event, data) => {
                 profile: skippedItem.profileName,
                 template: template || null,
                 message: textMessage || null,
+                media_path: preparedMediaPath || null,
+                media_filename: preparedMediaFilename || null,
                 status: 'Skipped',
                 sent_at: getLocalISOString(),
                 error: `Profile paused due to ${profileFailures} consecutive failures - safety measure`
@@ -5215,7 +5235,392 @@ const reportFile = getJsonLogsPath();
 
 // IPC to return report logs to renderer
 ipcMain.handle('get-reports', () => {
-  return readJsonLog();
+  try {
+    const reports = readJsonLog() || [];
+    // Enrich each report with count of 'Not WhatsApp' records from message_logs table
+    return (reports || []).map(r => {
+      try {
+        if (!r || !r.id) return r;
+        // Count rows where job_id matches and error mentions Not WhatsApp (case-insensitive)
+        const row = db.prepare("SELECT COUNT(*) as cnt FROM message_logs WHERE job_id = ? AND lower(error) LIKE ?").get(r.id, '%not whatsapp%');
+        r.record_not_whatsapp = row ? (row.cnt || 0) : 0;
+      } catch (e) {
+        // On any DB error, set to 0 and continue
+        r.record_not_whatsapp = 0;
+      }
+      return r;
+    });
+  } catch (e) {
+    console.error('get-reports failed to read/enrich reports:', e && e.message ? e.message : e);
+    return readJsonLog();
+  }
+});
+
+// Return failed message logs for a given job id
+ipcMain.handle('get-failed-message-logs', (event, jobId) => {
+  try {
+    if (!jobId) return [];
+    const rows = db.prepare("SELECT * FROM message_logs WHERE job_id = ? AND status = 'Failed' ORDER BY sent_at ASC").all(jobId);
+    return rows || [];
+  } catch (e) {
+    console.error('get-failed-message-logs failed:', e && e.message ? e.message : e);
+    return [];
+  }
+});
+
+// Return all message logs for a given job id (all statuses)
+ipcMain.handle('get-report-records', (event, jobId) => {
+  try {
+    if (!jobId) return [];
+    const rows = db.prepare("SELECT * FROM message_logs WHERE job_id = ? ORDER BY sent_at ASC").all(jobId);
+    return rows || [];
+  } catch (e) {
+    console.error('get-report-records failed:', e && e.message ? e.message : e);
+    return [];
+  }
+});
+
+// Export report records (for a job) to an Excel file chosen by the user
+ipcMain.handle('export-report-records', async (event, { jobId } = {}) => {
+  try {
+    if (!jobId) return { success: false, error: 'No jobId provided' };
+    const rows = db.prepare("SELECT * FROM message_logs WHERE job_id = ? ORDER BY sent_at ASC").all(jobId) || [];
+
+    // Convert to worksheet
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    const defaultName = `report_${jobId}_${timestamp}.xlsx`;
+
+    const { canceled, filePath: destPath } = await dialog.showSaveDialog({
+      title: 'Export report to Excel',
+      defaultPath: defaultName,
+      buttonLabel: 'Export'
+    });
+
+    if (canceled || !destPath) return { success: false, error: 'Save canceled' };
+
+    XLSX.writeFile(wb, destPath);
+    return { success: true, path: destPath };
+  } catch (e) {
+    console.error('export-report-records error:', e && e.message ? e.message : e);
+    return { success: false, error: e && e.message ? e.message : String(e) };
+  }
+});
+
+// Resend selected failed message logs. Expects an array of message_log rows or ids.
+ipcMain.on('resend-failed-message-logs', async (event, payload) => {
+  try {
+    // payload can be { rows: [...], ids: [...] }
+    const rows = Array.isArray(payload && payload.rows) ? payload.rows : null;
+    const ids = Array.isArray(payload && payload.ids) ? payload.ids : null;
+    let toProcess = [];
+
+    if (rows && rows.length > 0) toProcess = rows.slice();
+    else if (ids && ids.length > 0) {
+      // fetch rows by ids
+      const placeholders = ids.map(() => '?').join(',');
+      const stmt = db.prepare(`SELECT * FROM message_logs WHERE id IN (${placeholders})`);
+      toProcess = stmt.all(...ids);
+    } else {
+      event.reply('resend-failed-response', { success: false, message: 'No rows or ids provided' });
+      return;
+    }
+
+    if (toProcess.length === 0) {
+      event.reply('resend-failed-response', { success: true, processed: 0, message: 'Nothing to resend' });
+      return;
+    }
+
+    let processed = 0;
+    let sent = 0;
+    let failed = 0;
+
+    // Prepared statement to update existing message_log rows when resending
+    const updateMessageLogStmt = db.prepare(`
+      UPDATE message_logs SET
+        job_id = @job_id,
+        unique_id = @unique_id,
+        name = @name,
+        phone = @phone,
+        profile = @profile,
+        template = @template,
+        message = @message,
+        status = @status,
+        sent_at = @sent_at,
+        error = @error,
+        media_path = @media_path,
+        media_filename = @media_filename
+      WHERE id = @id
+    `);
+
+    for (const row of toProcess) {
+      try {
+        // If the original job has a controller, respect its paused/cancelled flags
+        try {
+          if (row && row.job_id && jobControllers && jobControllers[row.job_id]) {
+            const controller = jobControllers[row.job_id];
+            // while paused, wait (but keep sending small progress updates so UI stays responsive)
+            while (controller.paused) {
+              try { event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row, paused: true }); } catch (e) {}
+              await new Promise(r => setTimeout(r, 500));
+            }
+            // if cancelled while waiting or at any point, abort the resend operation
+            if (controller.cancelled) {
+              try { event.reply('resend-failed-response', { success: false, processed, sent, failed, cancelled: true, message: 'Resend cancelled by job controller' }); } catch (e) {}
+              return;
+            }
+          }
+        } catch (e) {
+          // non-fatal - continue processing this row
+          console.warn('resend loop controller check failed:', e && e.message ? e.message : e);
+        }
+
+        const profile = row.profile || null;
+        const client = profile ? activeClients[profile] : null;
+
+        if (!client) {
+          failed++;
+          processed++;
+          // Update existing failed row with latest attempt info (fallback to insert if no id)
+          try {
+            if (row && row.id) {
+              updateMessageLogStmt.run({
+                id: row.id,
+                job_id: row.job_id || null,
+                unique_id: row.unique_id || null,
+                name: row.name || null,
+                phone: row.phone || null,
+                profile: profile,
+                template: row.template || null,
+                message: row.message || null,
+                status: 'Failed',
+                sent_at: getLocalISOString(),
+                error: 'Resend failed: profile not logged in'
+              });
+            } else {
+              const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+              insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: 'Resend failed: profile not logged in' });
+            }
+          } catch (e) {
+            console.warn('Failed to update message_log for profile-not-logged-in:', e && e.message ? e.message : e);
+          }
+          event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row });
+          continue;
+        }
+
+        // verify phone
+        const phoneCheck = await verifyAndFormatPhone(client, row.phone);
+        if (!phoneCheck.valid) {
+          failed++;
+          processed++;
+          const reason = phoneCheck.reason || 'invalid';
+          try {
+            if (row && row.id) {
+              updateMessageLogStmt.run({
+                id: row.id,
+                job_id: row.job_id || null,
+                unique_id: row.unique_id || null,
+                name: row.name || null,
+                phone: row.phone || null,
+                profile: profile,
+                template: row.template || null,
+                message: row.message || null,
+                status: 'Failed',
+                sent_at: getLocalISOString(),
+                error: `Resend invalid phone (${reason})`
+              });
+            } else {
+              const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+              insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: `Resend invalid phone (${reason})` });
+            }
+          } catch (e) {
+            console.warn('Failed to update message_log for invalid-phone:', e && e.message ? e.message : e);
+          }
+          event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row });
+          continue;
+        }
+
+        const jid = phoneCheck.jid;
+        // message to send: prefer stored rendered message, fallback to template text
+        let messageToSend = row.message || '';
+        if ((!messageToSend || messageToSend.trim() === '') && row.template) {
+          try {
+            const t = getTemplateData(row.template);
+            messageToSend = t && t.message ? t.message : '';
+          } catch (e) {
+            messageToSend = '';
+          }
+        }
+
+        // allow media-only resends: check stored media path
+        const rowMediaPath = row.media_path || null;
+        const rowMediaFilename = row.media_filename || (row.media_path ? path.basename(row.media_path) : null);
+
+        if ((!messageToSend || messageToSend.trim() === '') && !rowMediaPath) {
+          // Nothing to send - mark as failed
+          failed++;
+          processed++;
+          try {
+            if (row && row.id) {
+              updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: null, status: 'Failed', sent_at: getLocalISOString(), error: 'Resend failed: no message/template/media available', media_path: rowMediaPath, media_filename: rowMediaFilename });
+            } else {
+              const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+              insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: null, status: 'Failed', sent_at: getLocalISOString(), error: 'Resend failed: no message/template/media available', media_path: rowMediaPath, media_filename: rowMediaFilename });
+            }
+          } catch (e) {
+            console.warn('Failed to update message_log for no-message:', e && e.message ? e.message : e);
+          }
+          event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row });
+          continue;
+        }
+
+        // attempt send (prefer media if available)
+        try {
+          if (rowMediaPath && fs.existsSync(rowMediaPath)) {
+            // send media using stored file
+            const { MessageMedia } = require('whatsapp-web.js');
+            let mediaData;
+            try {
+              mediaData = MessageMedia.fromFilePath(rowMediaPath);
+            } catch (e) {
+              // fallback: try reading buffer and creating MessageMedia from base64
+              try {
+                const buf = fs.readFileSync(rowMediaPath);
+                const b64 = buf.toString('base64');
+                const ext = (path.extname(rowMediaPath) || '').toLowerCase().replace('.', '');
+                let mime = 'application/octet-stream';
+                if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+                else if (ext === 'png') mime = 'image/png';
+                else if (ext === 'gif') mime = 'image/gif';
+                else if (ext === 'webp') mime = 'image/webp';
+                else if (ext === 'pdf') mime = 'application/pdf';
+                mediaData = new MessageMedia(mime, b64, rowMediaFilename || null);
+              } catch (ee) { mediaData = null; }
+            }
+
+            if (mediaData) {
+              if (messageToSend && messageToSend.trim() !== '') {
+                await sendMessageSafely(client, jid, mediaData, { caption: messageToSend });
+              } else {
+                await sendMessageSafely(client, jid, mediaData);
+              }
+
+              // update existing log to Sent (or insert fallback) with media info
+              try {
+                if (row && row.id) {
+                  updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: messageToSend ? String(messageToSend).substring(0, 500) : null, status: 'Sent', sent_at: getLocalISOString(), error: null, media_path: rowMediaPath, media_filename: rowMediaFilename });
+                } else {
+                  const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+                  insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: messageToSend ? String(messageToSend).substring(0, 500) : null, status: 'Sent', sent_at: getLocalISOString(), error: null, media_path: rowMediaPath, media_filename: rowMediaFilename });
+                }
+              } catch (e) { console.warn('Failed to update message_log as Sent (media):', e && e.message ? e.message : e); }
+            } else {
+              // media couldn't be read - fallback to text send if available
+              if (messageToSend && messageToSend.trim() !== '') {
+                await sendMessageSafely(client, jid, messageToSend);
+                if (row && row.id) {
+                  updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: messageToSend ? String(messageToSend).substring(0, 500) : null, status: 'Sent', sent_at: getLocalISOString(), error: null, media_path: rowMediaPath, media_filename: rowMediaFilename });
+                }
+              } else {
+                throw new Error('Resend media unavailable and no text fallback');
+              }
+            }
+          } else {
+            // No media file available; send as text
+            await sendMessageSafely(client, jid, messageToSend);
+
+            // update existing log to Sent (or insert fallback)
+            try {
+              if (row && row.id) {
+                updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: messageToSend ? String(messageToSend).substring(0, 500) : null, status: 'Sent', sent_at: getLocalISOString(), error: null, media_path: rowMediaPath, media_filename: rowMediaFilename });
+              } else {
+                const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+                insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: messageToSend ? String(messageToSend).substring(0, 500) : null, status: 'Sent', sent_at: getLocalISOString(), error: null, media_path: rowMediaPath, media_filename: rowMediaFilename });
+              }
+            } catch (e) { console.warn('Failed to update message_log as Sent:', e && e.message ? e.message : e); }
+          }
+
+          // update patient last msg date
+          try {
+            const ts = getLocalISOString();
+            const updateLastStmt = db.prepare('UPDATE patients SET Last_Msgsent_date = ?, mod_date = ? WHERE unique_id = ? OR phone = ?');
+            updateLastStmt.run(ts, ts, row.unique_id || '', row.phone || '');
+          } catch (e) {}
+
+          sent++;
+          processed++;
+          event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row });
+        } catch (sendErr) {
+          failed++;
+          processed++;
+          try {
+            if (row && row.id) {
+              updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: `Resend send error: ${sendErr && sendErr.message ? sendErr.message : String(sendErr)}` });
+            } else {
+              const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+              insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: profile, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: `Resend send error: ${sendErr && sendErr.message ? sendErr.message : String(sendErr)}` });
+            }
+          } catch (e) {
+            console.warn('Failed to update message_log for send error:', e && e.message ? e.message : e);
+          }
+          event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row, error: sendErr && sendErr.message ? sendErr.message : String(sendErr) });
+        }
+
+        // small pause between resends to reduce rate-limit risk
+        await new Promise(r => setTimeout(r, 1200));
+
+      } catch (e) {
+        // catch per-row unexpected errors
+        failed++;
+        processed++;
+        try {
+          if (row && row.id) {
+            updateMessageLogStmt.run({ id: row.id, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: row.profile || null, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: `Resend unexpected error: ${e && e.message ? e.message : e}` });
+          } else {
+            const mid = 'resend_' + Date.now().toString() + '_' + Math.floor(Math.random() * 1000);
+            insertMessageLog.run({ id: mid, job_id: row.job_id || null, unique_id: row.unique_id || null, name: row.name || null, phone: row.phone || null, profile: row.profile || null, template: row.template || null, message: row.message || null, status: 'Failed', sent_at: getLocalISOString(), error: `Resend unexpected error: ${e && e.message ? e.message : e}` });
+          }
+        } catch (xx) {}
+        event.reply('resend-failed-progress', { total: toProcess.length, processed, sent, failed, row, error: e && e.message ? e.message : String(e) });
+      }
+    }
+
+    // after processing all, update JSON job summaries for affected job_ids
+    try {
+      const jsonPath = getJsonLogsPath();
+      const logs = readJsonLog(jsonPath);
+      const jobMap = {}; // job_id -> {sentInc, failedInc}
+      for (const r of toProcess) {
+        const jid = r.job_id || null;
+        if (!jid) continue;
+        jobMap[jid] = jobMap[jid] || { sentInc: 0, failedInc: 0 };
+      }
+      // Recompute counts from DB for each job and write back
+      for (const jid of Object.keys(jobMap)) {
+        try {
+          const sentRow = db.prepare("SELECT COUNT(*) as cnt FROM message_logs WHERE job_id = ? AND status = 'Sent'").get(jid);
+          const failedRow = db.prepare("SELECT COUNT(*) as cnt FROM message_logs WHERE job_id = ? AND status = 'Failed'").get(jid);
+          const recSent = sentRow ? (sentRow.cnt || 0) : 0;
+          const recFailed = failedRow ? (failedRow.cnt || 0) : 0;
+          const idx = logs.findIndex(x => x.id === jid);
+          if (idx !== -1) {
+            logs[idx].record_sent = recSent;
+            logs[idx].record_failed = recFailed;
+          }
+        } catch (e) { console.warn('Failed to recompute job counts after resend:', e && e.message ? e.message : e); }
+      }
+      try { writeJsonLog(jsonPath, logs); event.reply('reports-updated', logs); } catch (e) {}
+    } catch (e) {}
+
+    event.reply('resend-failed-response', { success: true, processed, sent, failed });
+  } catch (err) {
+    console.error('resend-failed-message-logs error:', err && err.message ? err.message : err);
+    try { event.reply('resend-failed-response', { success: false, message: err && err.message ? err.message : String(err) }); } catch (e) {}
+  }
 });
 
 // return daily stats for last N days
@@ -6045,20 +6450,34 @@ try {
       phone TEXT,
       profile TEXT,
       template TEXT,
-      message TEXT,
-      status TEXT,
-      sent_at TEXT,
-      error TEXT
+        message TEXT,
+        status TEXT,
+        sent_at TEXT,
+        error TEXT,
+        media_path TEXT,
+        media_filename TEXT
     )
   `).run();
 } catch (e) {
   console.error('Failed to create message_logs table:', e && e.message ? e.message : e);
 }
 
+  // Migration: ensure media_path and media_filename columns exist for older DBs
+  try {
+    const cols = db.prepare("PRAGMA table_info('message_logs')").all();
+    const names = cols.map(c => c.name);
+    if (!names.includes('media_path')) {
+      try { db.prepare("ALTER TABLE message_logs ADD COLUMN media_path TEXT").run(); console.log('DB migrated: added media_path to message_logs'); } catch (e) { console.warn('Failed to add media_path column:', e && e.message ? e.message : e); }
+    }
+    if (!names.includes('media_filename')) {
+      try { db.prepare("ALTER TABLE message_logs ADD COLUMN media_filename TEXT").run(); console.log('DB migrated: added media_filename to message_logs'); } catch (e) { console.warn('Failed to add media_filename column:', e && e.message ? e.message : e); }
+    }
+  } catch (e) { console.warn('message_logs migration check failed:', e && e.message ? e.message : e); }
+
 // Prepared statement to insert message log rows
 const insertMessageLog = db.prepare(`
-  INSERT INTO message_logs (id, job_id, unique_id, name, phone, profile, template, message, status, sent_at, error)
-  VALUES (@id,@job_id,@unique_id,@name,@phone,@profile,@template,@message,@status,@sent_at,@error)
+  INSERT INTO message_logs (id, job_id, unique_id, name, phone, profile, template, message, status, sent_at, error, media_path, media_filename)
+  VALUES (@id,@job_id,@unique_id,@name,@phone,@profile,@template,@message,@status,@sent_at,@error,@media_path,@media_filename)
 `);
 
 // Wrap the prepared statement's run() to log payloads and failures for diagnostics
