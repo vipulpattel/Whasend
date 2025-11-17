@@ -987,36 +987,48 @@
           const reader = new FileReader();
           reader.onload = function(e) {
             const buffer = Buffer.from(e.target.result);
-            
             ipcRenderer.send('parse-excel-file', {
               fileName: selectedExcelFile.name,
               buffer: buffer,
               columnMappings: columnMappings,
               headerRowIndex: headerRowIndex
             });
-          
             ipcRenderer.once('parse-excel-file-response', (event, response) => {
               if (response.success) {
-                parsedExcelData = response.mappedData;
+                // Deduplicate after mapping, keeping header row
+                let mapped = response.mappedData;
+                if (mapped && mapped.length > 1 && columnMappings.Phone !== undefined) {
+                  const seen = new Set();
+                  const header = mapped[0];
+                  const phoneIdx = header.indexOf('Phone');
+                  const deduped = [header];
+                  for (let i = 1; i < mapped.length; i++) {
+                    const row = mapped[i];
+                    let phone = row[phoneIdx];
+                    if (phone) phone = phone.toString().trim();
+                    if (phone && !seen.has(phone)) {
+                      seen.add(phone);
+                      deduped.push(row);
+                    }
+                  }
+                  parsedExcelData = deduped;
+                } else {
+                  parsedExcelData = mapped;
+                }
                 mappedFilePath = response.mappedFilePath;
                 originalFilePath = response.originalFilePath;
-                
                 excelFileName.textContent = `📊 ${selectedExcelFile.name} (${parsedExcelData.length - 1} rows mapped)`;
                 hiddenExcelInput.files = createFileList(selectedExcelFile);
-                
                 // Show "View Parsed Data" button
                 viewParsedDataBtn.style.display = 'inline-block';
-                
                 closeExcelModalFn();
                 if(err.excelFile) err.excelFile.textContent = '';
-                
                 console.log('✅ Excel processing completed. Mapped file saved:', mappedFilePath);
               } else {
                 alert('Error saving mapped data: ' + response.error);
               }
             });
           };
-          
           reader.readAsArrayBuffer(selectedExcelFile);
         }
       }

@@ -1,7 +1,7 @@
 {
   "name": "whasend",
-  "version": "1.8.2",
-  "releaseDate": "2025-11-12",
+  "version": "1.8.5",
+  "releaseDate": "2025-11-15",
   "description": "whasend device desktop app with updated features like export patient, better message send today",
   "main": "main.js",
   "scripts": {
@@ -48,7 +48,12 @@
       "**/node_modules/better-sqlite3/**"
     ],
     "extraResources": [
-      "assets/db/patients.db"
+      "assets/db/patients.db",
+      {
+        "from": "samples",
+        "to": "samples",
+        "filter": ["**/*"]
+      }
     ],
     "directories": {
       "buildResources": "assets"
@@ -65,7 +70,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "vipulpattel",
+        "owner": "gitdis485",
         "repo": "Whasend"
       }
     ],

@@ -2837,10 +2837,8 @@ ipcMain.on('parse-excel-file', (event, { fileName, buffer, columnMappings, heade
     if (columnMappings && headerRowIndex) {
       const headers = Object.keys(columnMappings);
       mappedData = [];
-      
       // Add headers as first row
       mappedData.push(headers);
-      
       // Map data rows
       for (let i = headerRowIndex; i < filteredData.length; i++) {
         const mappedRow = [];
@@ -2850,15 +2848,28 @@ ipcMain.on('parse-excel-file', (event, { fileName, buffer, columnMappings, heade
         });
         mappedData.push(mappedRow);
       }
-      
+      // Deduplicate mappedData by Phone column (if present)
+      const phoneIdx = headers.indexOf('Phone');
+      if (phoneIdx !== -1) {
+        const seen = new Set();
+        const deduped = [headers];
+        for (let i = 1; i < mappedData.length; i++) {
+          let phone = mappedData[i][phoneIdx];
+          if (phone) phone = phone.toString().trim();
+          if (phone && !seen.has(phone)) {
+            seen.add(phone);
+            deduped.push(mappedData[i]);
+          }
+        }
+        mappedData = deduped;
+      }
       // Save mapped data as CSV for easy processing
       const mappedFileName = `${timestamp}_mapped.csv`;
       const mappedFilePath = path.join(uploadDir, mappedFileName);
       const csvContent = mappedData.map(row => 
-        row.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(',')
+        row.map(cell => `"${cell.toString().replace(/"/g, '""')}` ).join(',')
       ).join('\n');
       fs.writeFileSync(mappedFilePath, csvContent, 'utf-8');
-      
       console.log(`💾 Saved mapped data: ${mappedFilePath}`);
     }
     
@@ -3464,7 +3475,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
             message: '',
             status: 'Failed',
             sent_at: getLocalISOString(),
-            error: s.reason === 'missing' ? 'Missing phone in row' : 'Invalid phone format'
+            error: s.reason === 'missing' ? 'Missing phone in row' : 'Invalid phone format',
+            media_path: null,
+            media_filename: null
           });
         } catch (e) {
           console.warn('Failed to insert skipped-at-build message log:', e && e.message ? e.message : e);
@@ -3860,7 +3873,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
                 message: textMessage || null,
                 status: 'Skipped',
                 sent_at: getLocalISOString(),
-                error: 'Daily limit reached'
+                error: 'Daily limit reached',
+                media_path: preparedMediaPath || null,
+                media_filename: preparedMediaFilename || null
               });
             } catch (e) {
               console.warn('Failed to log daily limit skip to message_logs:', e && e.message ? e.message : e);
@@ -3908,7 +3923,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
               message: '',
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `Invalid phone (${reason})`
+              error: `Invalid phone (${reason})`,
+              media_path: preparedMediaPath || null,
+              media_filename: preparedMediaFilename || null
             });
           } catch (e) { console.warn('insertMessageLog failed (invalid-phone-precheck):', e && e.message ? e.message : e); }
 
@@ -4068,9 +4085,9 @@ ipcMain.on("send-message-proc", async (event, data) => {
               phone: item.number,
               profile: item.profileName,
               template: template || null,
-                message: messageContent || null,
-                media_path: preparedMediaPath || null,
-                media_filename: preparedMediaFilename || null,
+              message: messageContent || null,
+              media_path: preparedMediaPath || null,
+              media_filename: preparedMediaFilename || null,
               status: 'Sent',
               sent_at: getLocalISOString(),
               error: ''
@@ -8281,78 +8298,158 @@ ipcMain.handle('get-license-info', () => {
 
 
 // Copy samples folder to userData directory on startup
+// function copySamplesToUserData() {
+//   try {
+//     const userDataPath = getUserDataDir();
+//     const samplesDestPath = path.join(userDataPath, 'samples');
+    
+//     // Source samples folder (project directory)
+//     let samplesSourcePath;
+//     if (app.isPackaged) {
+//       // When packaged as EXE, samples are in resources
+//       samplesSourcePath = path.join(process.resourcesPath, 'samples');
+//     } else {
+//       // Development mode - samples in project directory
+//       samplesSourcePath = path.join(__dirname, 'samples');
+//     }
+    
+//     console.log('📁 Copying samples folder...');
+//     console.log('   From:', samplesSourcePath);
+//     console.log('   To:', samplesDestPath);
+    
+//     // Check if source samples folder exists
+//     if (!fs.existsSync(samplesSourcePath)) {
+//       console.warn('⚠️ Samples folder not found at:', samplesSourcePath);
+      
+//       // Fallback: try alternative path for development
+//       const altPath = path.join(__dirname, '..', 'samples');
+//       if (fs.existsSync(altPath)) {
+//         samplesSourcePath = altPath;
+//         console.log('✅ Found samples at alternative path:', samplesSourcePath);
+//       } else {
+//         console.error('❌ Samples folder not found in any expected location');
+//         return;
+//       }
+//     }
+    
+//     // Create destination directory if it doesn't exist
+//     fs.mkdirSync(samplesDestPath, { recursive: true });
+    
+//     // Copy all files from samples folder
+//     const files = fs.readdirSync(samplesSourcePath);
+//     let copiedCount = 0;
+    
+//     for (const file of files) {
+//       const sourcePath = path.join(samplesSourcePath, file);
+//       const destPath = path.join(samplesDestPath, file);
+      
+//       try {
+//         // Only copy if file doesn't exist or source is newer
+//         let shouldCopy = true;
+//         if (fs.existsSync(destPath)) {
+//           const sourceStats = fs.statSync(sourcePath);
+//           const destStats = fs.statSync(destPath);
+//           shouldCopy = sourceStats.mtime > destStats.mtime;
+//         }
+        
+//         if (shouldCopy) {
+//           fs.copyFileSync(sourcePath, destPath);
+//           copiedCount++;
+//           console.log(`   ✅ Copied: ${file}`);
+//         } else {
+//           console.log(`   ⏭️ Skipped: ${file} (already up to date)`);
+//         }
+//       } catch (e) {
+//         console.error(`   ❌ Failed to copy ${file}:`, e.message);
+//       }
+//     }
+    
+//     console.log(`📁 Samples copy completed: ${copiedCount}/${files.length} files copied`);
+    
+//   } catch (error) {
+//     console.error('❌ Failed to copy samples folder:', error.message);
+//   }
+// }
+
+// Copy samples folder to userData directory on startup
 function copySamplesToUserData() {
   try {
     const userDataPath = getUserDataDir();
     const samplesDestPath = path.join(userDataPath, 'samples');
-    
-    // Source samples folder (project directory)
+
+    // Resolve source path
     let samplesSourcePath;
+
     if (app.isPackaged) {
-      // When packaged as EXE, samples are in resources
+      // For packaged app (EXE)
       samplesSourcePath = path.join(process.resourcesPath, 'samples');
     } else {
-      // Development mode - samples in project directory
+      // For development mode
       samplesSourcePath = path.join(__dirname, 'samples');
     }
-    
-    console.log('📁 Copying samples folder...');
-    console.log('   From:', samplesSourcePath);
-    console.log('   To:', samplesDestPath);
-    
-    // Check if source samples folder exists
+
+    console.log('📁 Looking for samples folder...');
+    console.log('   Expected source:', samplesSourcePath);
+
+    // Validate source folder exists
     if (!fs.existsSync(samplesSourcePath)) {
-      console.warn('⚠️ Samples folder not found at:', samplesSourcePath);
-      
-      // Fallback: try alternative path for development
+      console.error('❌ Samples folder NOT FOUND at:', samplesSourcePath);
+
+      // Fallback for development
       const altPath = path.join(__dirname, '..', 'samples');
       if (fs.existsSync(altPath)) {
         samplesSourcePath = altPath;
-        console.log('✅ Found samples at alternative path:', samplesSourcePath);
+        console.log('🔄 Using fallback samples folder:', altPath);
       } else {
-        console.error('❌ Samples folder not found in any expected location');
+        console.error('🚫 No samples folder found in ANY path. Copy aborted.');
         return;
       }
     }
-    
-    // Create destination directory if it doesn't exist
+
+    // Ensure destination exists
     fs.mkdirSync(samplesDestPath, { recursive: true });
-    
-    // Copy all files from samples folder
-    const files = fs.readdirSync(samplesSourcePath);
+
+    // Get files (skip directories)
+    const entries = fs.readdirSync(samplesSourcePath, { withFileTypes: true });
+
+    const files = entries.filter(e => e.isFile()).map(e => e.name);
+
+    console.log(`📦 Found ${files.length} sample file(s). Copying...`);
+
     let copiedCount = 0;
-    
+
     for (const file of files) {
-      const sourcePath = path.join(samplesSourcePath, file);
-      const destPath = path.join(samplesDestPath, file);
-      
+      const source = path.join(samplesSourcePath, file);
+      const dest = path.join(samplesDestPath, file);
+
       try {
-        // Only copy if file doesn't exist or source is newer
         let shouldCopy = true;
-        if (fs.existsSync(destPath)) {
-          const sourceStats = fs.statSync(sourcePath);
-          const destStats = fs.statSync(destPath);
-          shouldCopy = sourceStats.mtime > destStats.mtime;
+
+        if (fs.existsSync(dest)) {
+          const srcStat = fs.statSync(source);
+          const dstStat = fs.statSync(dest);
+          shouldCopy = srcStat.mtime > dstStat.mtime;
         }
-        
+
         if (shouldCopy) {
-          fs.copyFileSync(sourcePath, destPath);
+          fs.copyFileSync(source, dest);
+          console.log(`   ✔ Copied: ${file}`);
           copiedCount++;
-          console.log(`   ✅ Copied: ${file}`);
         } else {
-          console.log(`   ⏭️ Skipped: ${file} (already up to date)`);
+          console.log(`   ↪ Skipped (up to date): ${file}`);
         }
-      } catch (e) {
-        console.error(`   ❌ Failed to copy ${file}:`, e.message);
+      } catch (err) {
+        console.error(`   ❌ Failed: ${file} → ${err.message}`);
       }
     }
-    
-    console.log(`📁 Samples copy completed: ${copiedCount}/${files.length} files copied`);
-    
-  } catch (error) {
-    console.error('❌ Failed to copy samples folder:', error.message);
+
+    console.log(`🎉 Samples copy completed → ${copiedCount}/${files.length} files copied`);
+
+  } catch (err) {
+    console.error('🔥 Fatal error copying samples:', err.message);
   }
 }
+
 
 app.whenReady().then(() => {
     // Copy samples folder to userData directory first
@@ -8936,7 +9033,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: '',
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `Profile ${currentProfile} no longer active`
+              error: `Profile ${currentProfile} no longer active`,
+              media_path: null,
+              media_filename: null
             });
           } catch (e) {
             console.warn('Failed to log profile inactive to message_logs:', e.message);
@@ -9010,7 +9109,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: '',
               status: 'Skipped',
               sent_at: getLocalISOString(),
-              error: `Daily limit reached (${dailyCounts[currentProfile]}/${maxPerProfilePerDay})`
+              error: `Daily limit reached (${dailyCounts[currentProfile]}/${maxPerProfilePerDay})`,
+              media_path: null,
+              media_filename: null
             });
           } catch (e) {
             console.warn('Failed to log daily limit to message_logs:', e.message);
@@ -9131,7 +9232,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: '',
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `No template determined. Last: ${patient.last_template}, Step: ${patient.last_schedule_days}`
+              error: `No template determined. Last: ${patient.last_template}, Step: ${patient.last_schedule_days}`,
+              media_path: null,
+              media_filename: null
             });
           } catch (e) {
             console.warn('Failed to log template determination failure to message_logs:', e.message);
@@ -9210,7 +9313,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: '',
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `Template "${templateInfo.templateName}" not found: ${e.message}`
+              error: `Template "${templateInfo.templateName}" not found: ${e.message}`,
+              media_path: null,
+              media_filename: null
             });
           } catch (logError) {
             console.warn('Failed to log template not found to message_logs:', logError.message);
@@ -9272,7 +9377,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
                 message: messageToSend ? messageToSend.substring(0, 500) : '',
                 status: 'Skipped',
                 sent_at: ts,
-                error: 'Not WhatsApp - marked as sent date'
+                error: 'Not WhatsApp - marked as sent date',
+                media_path: templateData?.media_path || null,
+                media_filename: templateData?.media_filename || null
               });
             } catch (logError) { console.warn('Failed to log not_whatsapp to message_logs:', logError && logError.message ? logError.message : logError); }
 
@@ -9308,7 +9415,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: messageToSend.substring(0, 500),
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `Invalid phone (${reason})`
+              error: `Invalid phone (${reason})`,
+              media_path: templateData?.media_path || null,
+              media_filename: templateData?.media_filename || null
             });
           } catch (logError) { console.warn('Failed to log invalid phone to message_logs:', logError && logError.message ? logError.message : logError); }
 
@@ -9347,7 +9456,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
               message: messageToSend ? messageToSend.substring(0, 500) : '',
               status: 'Failed',
               sent_at: getLocalISOString(),
-              error: `Invalid JID (${reason}): ${jid}`
+              error: `Invalid JID (${reason}): ${jid}`,
+              media_path: templateData?.media_path || null,
+              media_filename: templateData?.media_filename || null
             });
           } catch (logError) {
             console.warn('Failed to log invalid JID to message_logs:', logError && logError.message ? logError.message : logError);
@@ -9460,7 +9571,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
             message: logMessage.substring(0, 500), // Limit message length
             status: 'Sent',
             sent_at: timestamp,
-            error: null
+            error: null,
+            media_path: templateData?.media_path || null,
+            media_filename: templateData?.media_filename || null
           });
           console.log(`✅ Message logged to message_logs table: ${messageId}`);
         } catch (e) {
@@ -9607,7 +9720,9 @@ ipcMain.on('send-profile-messages-with-sequence', async (event, data) => {
             message: '',
             status: 'Failed',
             sent_at: getLocalISOString(),
-            error: `${error.name || 'Error'}: ${error.message}`
+            error: `${error.name || 'Error'}: ${error.message}`,
+            media_path: null,
+            media_filename: null
           });
           console.log(`✅ Critical error logged to message_logs table: ${messageId}`);
         } catch (logError) {
@@ -10226,6 +10341,95 @@ ipcMain.handle('debug-media-files', async () => {
   }
 });
 
+// Bulk update patient profiles by phone (from Excel upload)
+// Accepts: { name, data } where data is an array of bytes
+ipcMain.handle('bulk-update-patient-profiles', async (event, payload) => {
+  try {
+    if (!payload || !payload.data || !payload.name) {
+      return { success: false, error: 'No file data provided' };
+    }
+    const buffer = Buffer.from(payload.data);
+    // Save file to userdata/bulkprofilechange
+    const userDataDir = getUserDataDir();
+    const saveDir = path.join(userDataDir, 'bulkprofilechange');
+    if (!fs.existsSync(saveDir)) {
+      fs.mkdirSync(saveDir, { recursive: true });
+    }
+    // Save with timestamp to avoid overwrite
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const savePath = path.join(saveDir, `${timestamp}_${payload.name}`);
+    fs.writeFileSync(savePath, buffer);
 
+    let rows = [];
+    if (payload.name.toLowerCase().endsWith('.csv')) {
+      // Parse CSV
+      const text = buffer.toString('utf8');
+      const lines = text.split(/\r?\n/).filter(line => line.trim());
+      rows = lines.map(line => {
+        const cells = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') { current += '"'; i++; }
+            else { inQuotes = !inQuotes; }
+          } else if (char === ',' && !inQuotes) { cells.push(current.trim()); current = ''; }
+          else { current += char; }
+        }
+        cells.push(current.trim());
+        return cells;
+      });
+    } else {
+      // Excel: use Node.js XLSX
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+    }
+    if (!rows || rows.length < 2) return { success: false, error: 'No data found in file.' };
+    // Find columns
+    const headers = rows[0].map(h => (h || '').toString().toLowerCase().trim());
+    const phoneIdx = headers.indexOf('phone');
+    const profileIdx = headers.indexOf('profile');
+    if (phoneIdx === -1 || profileIdx === -1) {
+      return { success: false, error: 'Both "phone" and "profile" columns are mandatory.' };
+    }
+    // Prepare update data
+    const updates = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const phone = row[phoneIdx] ? row[phoneIdx].toString().trim() : '';
+      let profile = row[profileIdx] ? row[profileIdx].toString() : '';
+      profile = profile.trim();
+      // Skip if profile is null/blank/whitespace
+      if (!phone || !profile) continue;
+      updates.push({ phone, profile });
+    }
+    if (updates.length === 0) {
+      return { success: false, error: 'No valid rows with both phone and profile found.' };
+    }
+    // Bulk update
+    const now = getLocalISOString();
+    const stmt = db.prepare('UPDATE patients SET profile = ? WHERE phone = ?');
+    let count = 0;
+    const tx = db.transaction((rows) => {
+      for (const row of rows) {
+        try {
+          const r = stmt.run(row.profile, row.phone);
+          count += (r && r.changes) ? r.changes : 0;
+        } catch (e) {
+          console.warn('bulk-update-patient-profiles row failed for', row.phone, e && e.message ? e.message : e);
+        }
+      }
+    });
+    tx(updates);
+    return { success: true, count, saved: savePath };
+  } catch (e) {
+    console.error('bulk-update-patient-profiles failed:', e && e.message ? e.message : e);
+    return { success: false, error: e && e.message ? e.message : String(e) };
+  }
+});
 
 

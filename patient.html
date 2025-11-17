@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Customers Management</title>
+  <!-- Ensure XLSX is loaded before any inline scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <link
     href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
     rel="stylesheet"
@@ -220,6 +222,107 @@
   <div id="tableToolbar" style="display:flex; justify-content:flex-end; gap:10px; align-items:center; margin-top:8px;">
     <button id="setDefaultProfileBtn" class="btn" onclick="openDefaultProfilePicker()">Add Default Profile</button>
     <button id="openUpdateProfileBtn" class="btn" onclick="openUpdateProfileDialog()">Update Profile</button>
+    <button id="bulkProfileUpdateBtn" class="btn" onclick="openBulkProfileUpdateDialog()">Bulk Profile Update</button>
+    <!-- Bulk Profile Update Dialog -->
+    <div class="dialog-bg" id="bulkProfileUpdateDialogBg" style="display:none; align-items:center; justify-content:center">
+      <div class="dialog" style="width:360px;">
+        <h3>Bulk Profile Update</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <input type="file" id="bulkProfileExcelInput" accept=".xlsx,.xls,.csv" style="flex:1;" />
+          <button class="btn" id="downloadBulkProfileSampleBtn" style="margin-left:10px; white-space:nowrap;" onclick="downloadBulkProfileSample()">Download Sample</button>
+        </div>
+        <div id="bulkProfileFileInfo" style="margin:10px 0 0 0; font-size:13px; color:#555;"></div>
+        <div id="bulkProfileError" style="color:#d9534f; margin:8px 0 0 0; display:none;"></div>
+        <div style="text-align:right; margin-top:18px;">
+          <button class="btn" onclick="closeBulkProfileUpdateDialog()">Cancel</button>
+          <button class="btn primary" id="bulkProfileUpdateBtnConfirm" onclick="handleBulkProfileUpdate()">Update</button>
+        </div>
+         
+      </div>
+    </div>
+    <script>
+          // Download sample for bulk profile update
+          async function downloadBulkProfileSample() {
+            const btn = document.getElementById('downloadBulkProfileSampleBtn');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = 'Downloading...';
+            try {
+              const result = await ipcRenderer.invoke('download-sample-template', 'bulkprofileupdate.xlsx');
+              if (result.success) {
+                showToast(`✅ ${result.message}`, 'success', 4000);
+              } else if (result.canceled) {
+                showToast('Download canceled', 'info');
+              } else {
+                showToast(`❌ Download failed: ${result.error}`, 'error', 5000);
+              }
+            } catch (error) {
+              showToast(`❌ Failed to download sample: ${error.message}`, 'error', 5000);
+            } finally {
+              btn.disabled = false;
+              btn.textContent = 'Download Sample';
+            }
+          }
+      // Bulk Profile Update logic
+      let bulkProfileSelectedFile = null;
+      function openBulkProfileUpdateDialog() {
+        document.getElementById('bulkProfileUpdateDialogBg').style.display = 'flex';
+        document.getElementById('bulkProfileExcelInput').value = '';
+        document.getElementById('bulkProfileFileInfo').innerHTML = '';
+        document.getElementById('bulkProfileError').style.display = 'none';
+        bulkProfileSelectedFile = null;
+      }
+      function closeBulkProfileUpdateDialog() {
+        document.getElementById('bulkProfileUpdateDialogBg').style.display = 'none';
+        document.getElementById('bulkProfileExcelInput').value = '';
+        document.getElementById('bulkProfileFileInfo').innerHTML = '';
+        document.getElementById('bulkProfileError').style.display = 'none';
+        bulkProfileSelectedFile = null;
+      }
+      document.addEventListener('DOMContentLoaded', function() {
+        const input = document.getElementById('bulkProfileExcelInput');
+        if (input) {
+          input.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+              bulkProfileSelectedFile = file;
+              document.getElementById('bulkProfileFileInfo').innerHTML = `<b>Selected:</b> ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+              document.getElementById('bulkProfileError').style.display = 'none';
+            } else {
+              bulkProfileSelectedFile = null;
+              document.getElementById('bulkProfileFileInfo').innerHTML = '';
+            }
+          });
+        }
+      });
+      async function handleBulkProfileUpdate() {
+        const errorDiv = document.getElementById('bulkProfileError');
+        errorDiv.style.display = 'none';
+        if (!bulkProfileSelectedFile) {
+          errorDiv.textContent = 'Please select an Excel file.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+        try {
+          const arrayBuffer = await bulkProfileSelectedFile.arrayBuffer();
+          const buffer = new Uint8Array(arrayBuffer);
+          const fileName = bulkProfileSelectedFile.name;
+          // Send file buffer to backend for parsing and update
+          const res = await ipcRenderer.invoke('bulk-update-patient-profiles', { name: fileName, data: Array.from(buffer) });
+          if (res && res.success) {
+            showToast(`Updated ${res.count || 0} profiles successfully!`, 'success');
+            closeBulkProfileUpdateDialog();
+            await loadPatients();
+          } else {
+            errorDiv.textContent = 'Update failed: ' + (res && res.error ? res.error : 'Unknown error');
+            errorDiv.style.display = 'block';
+          }
+        } catch (err) {
+          errorDiv.textContent = 'Error: ' + (err && err.message ? err.message : err);
+          errorDiv.style.display = 'block';
+        }
+      }
+    </script>
   </div>
 
   <div style="margin-top:12px">
@@ -2327,7 +2430,6 @@ async function exportSyncReport() {
 
   </script>
 
-  <!-- Excel support -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <!-- Excel support (already loaded in <head>) -->
 </body>
 </html>
