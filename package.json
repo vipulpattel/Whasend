@@ -1,6 +1,6 @@
 {
   "name": "whasend",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "releaseDate": "2025-11-15",
   "description": "whasend device desktop app with updated features like export patient, better message send today",
   "main": "main.js",
@@ -52,7 +52,9 @@
       {
         "from": "samples",
         "to": "samples",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {
